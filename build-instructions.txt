@@ -1,0 +1,15 @@
+--------------------Build instructions--------------------
+
+1) Download and install Maven 3
+
+2) Make sure the Maven executables are on the PATH system variable
+
+3) Go to the save-the-world directory
+
+4) Run this command:
+	
+	mvn clean package
+
+5) In /target subdirectory, you will find the desired jar file 
+	
+	save-the-world-{version}.jar

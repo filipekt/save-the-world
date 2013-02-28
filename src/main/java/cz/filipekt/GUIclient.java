@@ -68,12 +68,12 @@ public class GUIclient {
     /**
      * The window containing connection options. It is displayed on the application startup.
      */
-    final JFrame connectFrame = new JFrame("Save the World");    
+    private final JFrame connectFrame = new JFrame("Save the World");    
     
     /**
      * The window containing tree-like view of the server file database.
      */
-    final JFrame browserFrame = new JFrame("Save the World");
+    private final JFrame browserFrame = new JFrame("Save the World");
     
     /**
      * The Client instance associated with this GUI class.
@@ -93,12 +93,12 @@ public class GUIclient {
     /**
      * The valid locale
      */
-    Locale locale;
+    private Locale locale;
     
     /**
      * Contains all the localized messages that are shown to the user.
      */
-    ResourceBundle messages;
+    private ResourceBundle messages;
     
     public GUIclient(){
         locale = new Locale("en","US");
@@ -228,17 +228,17 @@ public class GUIclient {
     /**
      * The tree visible in the browser frame, its data model is the file database.
      */
-    JTree tree;
+    private JTree tree;
     
     /**
      * The root node of the data model of "tree"
      */
-    DefaultMutableTreeNode topNode;
+    private DefaultMutableTreeNode topNode;
     
     /**
      * Data model used for "tree"
      */
-    DefaultTreeModel treeModel;
+    private DefaultTreeModel treeModel;
     
     /**
      * In case the contents of the server file database changed, </br>
@@ -295,11 +295,15 @@ public class GUIclient {
         pane.add(addButton,c);
         
         JButton getButton = new JButton(messages.getString("get") + "...");
-        getButton.addActionListener(new GetButtonActionListener());
+        getButton.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent ae) {
+                createAndShowDownloadFrame(false);
+            }
+        });
         c.gridx = 1;
         c.gridy = 1;
-        c.gridheight = 1;
-        c.gridwidth = 1;
         pane.add(getButton,c);
         
         JButton refreshButton = new JButton(messages.getString("refresh"));
@@ -314,6 +318,18 @@ public class GUIclient {
         c.gridy = 2;
         pane.add(refreshButton,c);
         
+        JButton zipButton = new JButton(messages.getString("get_zip") + "...");
+        zipButton.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent ae) {
+                createAndShowDownloadFrame(true);
+            }
+        });
+        c.gridx = 1;
+        c.gridy = 2;
+        pane.add(zipButton,c);
+        
         browserFrame.setSize(400, 400);
         browserFrame.setResizable(false);
         browserFrame.setLocationByPlatform(true);
@@ -323,7 +339,64 @@ public class GUIclient {
     /**
      * The small window shown when a time consuming operation is started.
      */
-    JFrame progressFrame;
+    private JFrame progressFrame;
+    
+    /**
+     * Small windows that shows up when a download button is pressed.
+     * It gives two options to continue - to download to a home directory
+     * or to select a particular destination.
+     */
+    private JFrame downloadFrame;
+    
+    /**
+     * Creates and shows the window which gives user options, where to
+     * download a file - a default or custom location.
+     */
+    private void createAndShowDownloadFrame(final boolean zip){
+        downloadFrame = new JFrame(messages.getString("download_frame"));
+        downloadFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        downloadFrame.addWindowListener(new WindowListener() {
+            @Override public void windowOpened(WindowEvent we) {}
+            @Override public void windowClosing(WindowEvent we) {
+                downloadFrame.setVisible(false);
+            }            
+            @Override public void windowClosed(WindowEvent we) {}            
+            @Override public void windowIconified(WindowEvent we) {}
+            @Override public void windowDeiconified(WindowEvent we) {}
+            @Override public void windowActivated(WindowEvent we) {}
+            @Override public void windowDeactivated(WindowEvent we) {}
+        });
+        Container pane = downloadFrame.getContentPane();
+        pane.setLayout(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        
+        JLabel question = new JLabel(messages.getString("where_download"));
+        c.gridheight = 1;
+        c.gridwidth = 2;
+        c.fill = GridBagConstraints.BOTH;
+        c.weightx = 1;
+        c.weighty = 1;
+        c.gridx = 0;
+        c.gridy = 0;
+        pane.add(question,c);
+        
+        JButton default_location = new JButton(messages.getString("default_location"));
+        default_location.addActionListener(new GetButtonActionListener(zip, true));
+        c.gridwidth = 1;
+        c.gridx = 0;
+        c.gridy = 1;
+        pane.add(default_location,c);
+        
+        JButton custom_location = new JButton(messages.getString("custom_location"));
+        custom_location.addActionListener(new GetButtonActionListener(zip,false));
+        c.gridx = 1;
+        c.gridy = 1;
+        pane.add(custom_location,c);
+        
+        downloadFrame.pack();
+        downloadFrame.setLocationByPlatform(true);
+        downloadFrame.setVisible(true);
+    }
     
     /**
      * Creates and shows the small window indicating a time consuming activity </br>
@@ -368,7 +441,7 @@ public class GUIclient {
     /**
      * Determines, what path is selected in the GUIclient view of server files
      */
-    private LinkedList<TreeNode> selectedPath = null;
+    private List<TreeNode> selectedPath = null;
     
     /**
      * When a file/directory is selected in the graphical view of server file database,
@@ -406,7 +479,8 @@ public class GUIclient {
 
                         @Override
                         protected Void doInBackground() throws Exception {
-                            serveGet();
+                            downloadFrame.setVisible(false);
+                            serveGet(zip, default_destination);
                             return null;
                         }
                         
@@ -422,7 +496,15 @@ public class GUIclient {
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
                 }
-            }        
+            }   
+            
+            final boolean zip;
+            final boolean default_destination;
+            
+            GetButtonActionListener(boolean zip, boolean default_destination){
+                this.zip = zip;
+                this.default_destination = default_destination;
+            }
     }
     
     /**
@@ -469,7 +551,7 @@ public class GUIclient {
             @Override
             public void windowClosing(WindowEvent e) {
                 try {
-                    client.kryo.writeObject(client.kryo_output, Requests.END);
+                    client.terminateConnection();
                     client.end();                    
                 } catch (IOException ex) {
                     JOptionPane.showMessageDialog(browserFrame, messages.getString("termination_fail"), messages.getString("warning"), JOptionPane.WARNING_MESSAGE);
@@ -507,11 +589,11 @@ public class GUIclient {
             if(item.isDir()){
                 DefaultMutableTreeNode child = new DefaultMutableTreeNode(item, true);
                 node.add(child);
-                createTreeNodes2(child, ((DDirectory)item).item_map);
+                createTreeNodes2(child, ((DDirectory)item).getItemMap());
             } else {
                 DefaultMutableTreeNode fileNode = new DefaultMutableTreeNode(item, true);
-                if (((DFile)item).version_list != null){
-                    for (DVersion version : ((DFile)item).version_list){
+                if (((DFile)item).getVersionList() != null){
+                    for (DVersion version : ((DFile)item).getVersionList()){
                         fileNode.add(new DefaultMutableTreeNode(version, false));
                     }
                 }
@@ -550,7 +632,7 @@ public class GUIclient {
         }  
         final JFileChooser fc = new JFileChooser();
         fc.setLocale(locale);
-        fc.setDialogTitle("Select the Source");
+        fc.setDialogTitle(messages.getString("select_source"));
         fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         int returnVal = fc.showOpenDialog(browserFrame);
         if (returnVal == JFileChooser.APPROVE_OPTION){
@@ -587,78 +669,103 @@ public class GUIclient {
     }
     
     /**
+     * Tells whether the user is trying to download a directory into a regular file.
+     * @param source
+     * @param destination
+     * @return 
+     */
+    private boolean isCompatible(List<TreeNode> source, Path destination){
+        Object item = ((DefaultMutableTreeNode)source.get(source.size() - 1)).getUserObject();        
+        return  item instanceof DVersion || !((DItem)item).isDir() || Files.isDirectory(destination);            
+    }
+    
+    /**
      * Takes care of the get command
      */
-    private void serveGet(){    
+    private void serveGet(final boolean zip, final boolean defaultDestination){    
         if (selectedPath == null){            
             JOptionPane.showMessageDialog(browserFrame, messages.getString("no_file_1"), messages.getString("no_file_2"), JOptionPane.WARNING_MESSAGE);
             return;
         }         
-        if (selectedPath.size() == 0){
+        if (selectedPath.isEmpty()){
             JOptionPane.showMessageDialog(browserFrame, messages.getString("root_disabled"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
             return;
         }
-        final JFileChooser fc = new JFileChooser();
-        fc.setLocale(locale);
-        fc.setDialogTitle("Select the Destination");
-        fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-        int returnVal = fc.showOpenDialog(browserFrame);
-        if (returnVal == JFileChooser.APPROVE_OPTION){
-            SwingUtilities.invokeLater(new Runnable() {
-
-                @Override
-                public void run() {
-                    createAndShowProgessFrame();
-                }
-            });            
-            Path destination = fc.getSelectedFile().toPath();
-            if (!Files.isDirectory(destination)){
-                int answer = JOptionPane.showConfirmDialog(browserFrame, messages.getString("replace_1"), messages.getString("replace_2"), JOptionPane.YES_NO_CANCEL_OPTION);
-                if (answer != JOptionPane.YES_OPTION){
-                    return;
-                } 
+        Path destination;
+        if (defaultDestination){
+            destination = Paths.get(System.getProperty("user.home"));
+        } else {
+            final JFileChooser fc = new JFileChooser();
+            fc.setLocale(locale);
+            fc.setDialogTitle(messages.getString("select_destination"));
+            fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+            int returnVal = fc.showOpenDialog(browserFrame);            
+            if (returnVal != JFileChooser.APPROVE_OPTION){
+                return;
             }
-            if (isSelectedPathDir()){                    
-                try {
-                    LinkedList<String> selectedPathStrings = new LinkedList<>();
-                    for(TreeNode tn : selectedPath){
-                        selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                    }
-                    receiveDirectory(selectedPathStrings, destination);
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-                } catch (FileNotFoundException ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            destination = fc.getSelectedFile().toPath();
+        }
+        if (!zip && !isCompatible(selectedPath, destination)){
+            JOptionPane.showMessageDialog(browserFrame, messages.getString("dir_into_file"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        SwingUtilities.invokeLater(new Runnable() {
+
+            @Override
+            public void run() {
+                createAndShowProgessFrame();
+            }
+        });                        
+        if (!Files.isDirectory(destination)){
+            int answer = JOptionPane.showConfirmDialog(browserFrame, messages.getString("replace_1"), messages.getString("replace_2"), JOptionPane.YES_NO_CANCEL_OPTION);
+            if (answer != JOptionPane.YES_OPTION){
+                return;
+            } 
+        }
+        if (isSelectedPathDir()){                    
+            try {
+                LinkedList<String> selectedPathStrings = new LinkedList<>();
+                for(TreeNode tn : selectedPath){
+                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
                 }
-            } else if (isSelectedPathVersion()){
-                try {
-                    LinkedList<String> selectedPathStrings = new LinkedList<>();
-                    for(TreeNode tn : selectedPath){
-                        selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                    }
-                    DVersion version = (DVersion)((DefaultMutableTreeNode)selectedPath.getLast()).getUserObject();
-                    receiveVersion(destination, selectedPathStrings, version);
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-                } catch (FileNotFoundException ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                }                
-                
-            } else { // selected item is a file
-                try {
-                    LinkedList<String> selectedPathStrings = new LinkedList<>();
-                    for(TreeNode tn : selectedPath){
-                        selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                    }
-                    receiveFile(destination, selectedPathStrings);
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-                } catch (FileNotFoundException ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                receiveDirectory(selectedPathStrings, destination, zip, true);
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
+            } catch (FileNotFoundException ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            }
+        } else if (isSelectedPathVersion()){
+            try {
+                LinkedList<String> selectedPathStrings = new LinkedList<>();
+                for(TreeNode tn : selectedPath){
+                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
                 }
+                DVersion version = (DVersion)((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject();
+                DFile file = db.findFile(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
+                if (file == null) {
+                    throw new FileNotFoundException();
+                }
+                receiveVersion(destination, selectedPathStrings.subList(0, selectedPathStrings.size()-1), file.getVersionList().indexOf(version), zip);
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
+            } catch (FileNotFoundException ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            }                
+
+        } else { // selected item is a file
+            try {
+                LinkedList<String> selectedPathStrings = new LinkedList<>();
+                for(TreeNode tn : selectedPath){
+                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
+                }
+                receiveFile(destination, selectedPathStrings, zip);
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
+            } catch (FileNotFoundException ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
             }
         }
     }
@@ -672,58 +779,61 @@ public class GUIclient {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    private void receiveDirectory(List<String> src, Path dest) throws IOException, ClassNotFoundException, WrongVersionNumber{
-        if (db.getItem(src).isDir()){
-            DDirectory dir = (DDirectory) db.getItem(src);
-            for (Entry<String,DItem> entry : dir.item_map.entrySet()){
-                Path dest2 = Paths.get(dest.toAbsolutePath().toString(), entry.getKey());
-                LinkedList<String> src2 = new LinkedList<>();
-                src2.addAll(src);
-                src2.add(entry.getKey());                    
-                if(entry.getValue().isDir()){
-                    // create the dir if needed                    
-                    if (Files.notExists(dest2)){
-                        Files.createDirectories(dest2);
-                    }
-                    // continue recursively in depth                    
-                    receiveDirectory(src2, dest2);
-                } else {
-                    // handle entry as a regular file
-                    receiveFile(dest2, src2);
-                }
+    private void receiveDirectory(List<String> src, Path dest, final boolean zip, final boolean toplevel) 
+            throws IOException, ClassNotFoundException, WrongVersionNumber{
+        if (zip){
+            receiveFile(dest, src, true);
+        } else {
+            if (toplevel){
+                Path dest2 = Paths.get(dest.toAbsolutePath().toString(), src.get(src.size()-1));
+                Files.createDirectories(dest2);
+                dest = dest2;
             }
+            if (db.getItem(src).isDir()){
+                DDirectory dir = (DDirectory) db.getItem(src);
+                for (Entry<String,DItem> entry : dir.getItemMap().entrySet()){
+                    Path dest2 = Paths.get(dest.toAbsolutePath().toString(), entry.getKey());
+                    LinkedList<String> src2 = new LinkedList<>();
+                    src2.addAll(src);
+                    src2.add(entry.getKey());                    
+                    if(entry.getValue().isDir()){
+                        // create the dir if needed                    
+                        if (Files.notExists(dest2)){
+                            Files.createDirectories(dest2);
+                        }
+                        // continue recursively in depth                    
+                        receiveDirectory(src2, dest2, false, false);
+                    } else {
+                        // handle entry as a regular file
+                        receiveFile(dest2, src2, false);
+                    }
+                }
+            }            
         }
     }
     
     /**
      * Determines, whether the selected item in the graphical view of server </br>
-     * database is a directory
+     * database is a directory.
      * @return 
      */
     private boolean isSelectedPathDir(){   
         if (selectedPath == null){            
             return false;
         } 
-        if (selectedPath.size() == 0){
+        if (selectedPath.isEmpty()){
             return true;
         }
-        if (((DefaultMutableTreeNode)selectedPath.getLast()).getUserObject() instanceof DDirectory){
-            return true;
-        }
-        return false;       
+        return ((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject() instanceof DDirectory;
     }
     
     /**
      * Determines, whether the selected item in the graphical view of server </br>
-     * database is a version of a file
+     * database is a version of a file.
      * @return 
      */    
     private boolean isSelectedPathVersion(){
-        if (((DefaultMutableTreeNode)selectedPath.getLast()).getUserObject() instanceof DVersion){
-            return true;
-        } else {
-            return false;
-        }
+        return ((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject() instanceof DVersion;
     }
     
     /**
@@ -741,20 +851,21 @@ public class GUIclient {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    private void receiveFile(Path dest, LinkedList<String> src) throws IOException, ClassNotFoundException, WrongVersionNumber{  
+    private void receiveFile(Path dest, List<String> src, final boolean zip) 
+            throws IOException, ClassNotFoundException, WrongVersionNumber{  
         if (src == null){
             return;
         } 
         Path dest2;
         if (Files.isDirectory(dest)){
-            dest2 = Paths.get(dest.toAbsolutePath().toString(), src.getLast());        
+            dest2 = Paths.get(dest.toAbsolutePath().toString(), src.get(src.size()-1) + (zip ? ".zip" : ""));        
         } else {
             dest2 = dest;
         }        
         List<String> request = new LinkedList<>();
-        request.add("get");
+        request.add(zip ? "get_zip" : "get");
         request.add(constructPath(src));
-        int[] data = client.serveGetBin(request);
+        int[] data = client.serveGetBin(request, zip);
         if (data == null){            
             throw new FileNotFoundException();
         }
@@ -766,39 +877,33 @@ public class GUIclient {
     }
     
     /**
-     * Given the file "src" on server, it's version "version" and the path "dest" at the client, </br>
-     * this method downloads the contents of the version to "dest"
-     * @param dest
-     * @param src
+     * Given the file "sourceFile" on server, it's version "version" and the path "destination" at the client, </br>
+     * this method downloads the contents of the version to "destination"
+     * @param destination
+     * @param sourceFile
      * @param version
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    private void receiveVersion(Path dest, LinkedList<String> src, DVersion version) throws IOException, ClassNotFoundException, WrongVersionNumber{
-        if (src == null){
+    private void receiveVersion(Path destination, List<String> sourceFile, final int versionNumber, final boolean zip) 
+            throws IOException, ClassNotFoundException, WrongVersionNumber{
+        if (sourceFile == null){
             return;
         } 
         Path dest2;
-        if (Files.isDirectory(dest)){
-            String fname = src.get(src.size()-2);
-            dest2 = Paths.get(dest.toAbsolutePath().toString(), fname);
+        if (Files.isDirectory(destination)){
+            String fname = sourceFile.get(sourceFile.size()-1);
+            dest2 = Paths.get(destination.toAbsolutePath().toString(), fname + (zip ? ".zip" : ""));
         } else {
-            dest2 = dest;
+            dest2 = destination;
         }        
         List<String> request = new LinkedList<>();
-        request.add("get");
-        request.add(constructPath(src.subList(0, src.size()-1)));
+        request.add(zip ? "get_zip" : "get");
+        request.add(constructPath(sourceFile));
+        request.add(Integer.toString(versionNumber));        
         
-        //determine the number of version
-        DFile file = db.findFile(src.subList(0, src.size()-1));
-        if (file == null) {
-            throw new FileNotFoundException();
-        }
-        int verNum = file.version_list.indexOf(version);
-        request.add(Integer.toString(verNum));        
-        
-        int[] data = client.serveGetBin(request);
+        int[] data = client.serveGetBin(request, zip);
         if (data == null){            
             throw new FileNotFoundException();
         }
@@ -807,5 +912,5 @@ public class GUIclient {
                 bos.write(i);
             }
         }           
-    }
+    }    
 }

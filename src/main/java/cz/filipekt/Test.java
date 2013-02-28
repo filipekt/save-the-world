@@ -4,6 +4,8 @@
  */
 package cz.filipekt;
 
+import java.io.IOException;
+
 
 /**
  *  Trida pro testovaci ucely
@@ -11,8 +13,15 @@ package cz.filipekt;
  */
 public class Test {        
     
-    public static void main(String[] args) throws Exception {         
+           
         
-    }    
+	public static void main(String[] args) throws IOException {
+		long L = 1231231231123123L;
+                byte b = 3;
+                long M = L + b;
+                System.out.println(M);
+	}
+        
+        
     
 }

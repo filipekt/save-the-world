@@ -2,7 +2,6 @@ package cz.filipekt;
 
 import difflib.DiffUtils;
 import difflib.Patch;
-import difflib.PatchFailedException;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
@@ -12,7 +11,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.security.NoSuchAlgorithmException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -27,11 +25,11 @@ public class ServerUtils {
     
     
     /**
-     * Encodes the input List of bytes into a String
+     * Encodes the input array of bytes into a String
      * @param data
      * @return 
      */
-    static String byteToString(List<Byte> data){
+    static String byteToString(byte[] data){
         StringBuilder sb = new StringBuilder();
         if(data!=null){
             for(Byte b : data){
@@ -56,7 +54,7 @@ public class ServerUtils {
     }
     
     /**
-     * Computer the size of the contents of the directory, recursively
+     * Computer the validBytes of the contents of the directory, recursively
      * @param p
      * @return
      * @throws IOException 
@@ -71,38 +69,24 @@ public class ServerUtils {
             }
         });
         return hl.getVal();
-    }
+    }    
     
     /**
-     * Composes the filename of a block, with hash "hash" and which is "col"-th in the list of hash collisions
-     * @param hash
-     * @param col
-     * @return 
-     */
-    static String getName(String hash, int col){
-        if (col==0){
-            return  hash;
-        } else {
-            return hash + "v" + col;
-        }
-    }
-    
-    /**
-     * Loads the contents of the "block" from disc and return it as list of bytes
+     * Loads the contents of the "block" from disc and return it as array of bytes
      * @param block
      * @return
      * @throws IOException 
      */
-    static List<Byte> loadBlockFromDisc(DBlock block, String dir) throws IOException{
-        String name = getName(block.hash, block.col);
+    static byte[] loadBlockFromDisc(DBlock block, String dir) throws IOException{
+        String name = block.getName();
         Path p = Paths.get(dir, name);
-        List<Byte> res = new LinkedList<>();
-        int c;
-        byte b;
-        try (BufferedInputStream bis = new BufferedInputStream(Files.newInputStream(p))){
-            while((c=bis.read())!=-1){
-                b = (byte) (c-128);
-                res.add(b);
+        int validBytes = block.getUsed();
+        byte[] res = new byte[validBytes];        
+        try (BufferedInputStream bis = new BufferedInputStream(Files.newInputStream(p))){            
+            int i = 0;        
+            int c;
+            while(((c=bis.read())!=-1) && (i < validBytes)){
+                res[i++] = (byte) (c-128);                
             }                        
         }
         return res;
@@ -115,15 +99,18 @@ public class ServerUtils {
      * @throws IOException
      * @throws BlockNotFound 
      */
-    static List<Byte> loadVersionFromDisc(DVersion version, String dir) 
+    static byte[] loadVersionFromDisc(DVersion version, String dir) 
             throws IOException, BlockNotFound{
-        List<Byte> fileContent = new LinkedList<>();
-        if (version.script_form || version.blocks==null){
+        int versionSize = version.estimateSize();
+        byte[] fileContent = new byte[versionSize];
+        int i = 0;
+        if (version.isScriptForm() || (version.getBlocks() == null)){
             throw new BlockNotFound();
         }
-        for(DBlock block : version.blocks){
-            List<Byte> blockData = loadBlockFromDisc(block,dir);
-            fileContent.addAll(blockData);
+        for(DBlock block : version.getBlocks()){
+            byte[] blockData = loadBlockFromDisc(block, dir);
+            System.arraycopy(blockData, 0, fileContent, i, blockData.length);
+            i += blockData.length;
         }
         return fileContent;
     }    
@@ -131,23 +118,31 @@ public class ServerUtils {
     
     
     /**
-     * Encodes a String into a list of bytes
+     * Encodes a String into an array of bytes
      * @param data
      * @return 
      */
-    static List<Byte> stringToByte(String data){
-        List<Byte> res = new LinkedList<>();
+    static byte[] stringToByte(String data){        
+//        List<Byte> res = new ArrayList<>();    
         if(data!=null && !data.isEmpty()){
+            int length = data.length();
+            byte[] res = new byte[length];
+            int i = 0;
+            
             for(char c : data.toCharArray()){
-                Byte b = (byte)((int)c -128);
-                res.add(b);
+                byte b = (byte)((int)c -128);
+//                res.add(b);
+                res[i++] = b;
             }
+            return res;
+        } else {
+            return new byte[0];
         }
-        return res;
+//        return res;
     }          
     
     /**
-     * With respect to the size of file "f" determines the block size, which will be used for storing the f's blocks
+     * With respect to the validBytes of file "f" determines the block validBytes, which will be used for storing the f's blocks.
      * @param f
      * @return 
      */
@@ -166,9 +161,10 @@ public class ServerUtils {
                             return c*16*16;
                         case 5:
                         case 6:
-                            return c*16*16*16;
                         default:
-                            return c*256*256;        
+                            return c*16*16*16;
+//                        default:
+//                            return c*256*256;        
                     }
         } catch (IOException ex) {
             Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
@@ -282,29 +278,31 @@ public class ServerUtils {
      * @throws IOException 
      */
     static void transformBlocksToScript(DVersion base, DVersion new_vers, 
-            String home_dir, Map<DVersion,Patch> scripts) throws IOException{
-        List<Byte> obsahSouboru = new LinkedList<>();
-        for(DBlock blok : base.blocks){
-            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
-            obsahSouboru.addAll(blokData);
-        }
-        String obsahZakladni = ServerUtils.byteToString(obsahSouboru);
+            String home_dir, Map<DVersion,Patch> scripts) throws IOException, BlockNotFound{
+//        List<Byte> obsahSouboru = new LinkedList<>();
+//        for(DBlock blok : base.blocks){
+//            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
+//            obsahSouboru.addAll(blokData);
+//        }
+//        String obsahZakladni = ServerUtils.byteToString(obsahSouboru);
+        String obsahZakladni = ServerUtils.byteToString(ServerUtils.loadVersionFromDisc(base, home_dir));
         
-        obsahSouboru.clear();
-        for(DBlock blok : new_vers.blocks){
-            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
-            obsahSouboru.addAll(blokData);            
-        }
-        String obsahNova = ServerUtils.byteToString(obsahSouboru);
+//        obsahSouboru.clear();
+//        for(DBlock blok : new_vers.blocks){
+//            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
+//            obsahSouboru.addAll(blokData);            
+//        }
+//        String obsahNova = ServerUtils.byteToString(obsahSouboru);
+        String obsahNova = ServerUtils.byteToString(ServerUtils.loadVersionFromDisc(new_vers, home_dir));
         List<String> l1 = new LinkedList<>();
         List<String> l2 = new LinkedList<>();
         l1.add(obsahZakladni);
         l2.add(obsahNova);
         Patch patch = DiffUtils.diff(l1,l2);
-        new_vers.script_form = true;
+        new_vers.setScriptForm(true);
         setScript(new_vers, patch,scripts);
         ServerUtils.unlinkBlocksFromVersion(new_vers);
-        new_vers.blocks = null;
+        new_vers.setBlocks(null);
     }   
     
     /**
@@ -323,18 +321,18 @@ public class ServerUtils {
      * @param version 
      */
     static void unlinkBlocksFromVersion(DVersion version){
-        if(version.blocks != null){
-            for (DBlock blok : version.blocks){
-                blok.ref_count--;
+        if(version.getBlocks() != null){
+            for (DBlock blok : version.getBlocks()){
+                blok.decrementRefCount();
             }
-            version.blocks = null;
+            version.setBlocks(null);
         }
     }
     
     static void linkBlocksToVersion(DVersion version){
-        if(version.blocks != null){
-            for (DBlock block : version.blocks){
-                block.ref_count++;
+        if(version.getBlocks() != null){
+            for (DBlock block : version.getBlocks()){
+                block.incrementRefCount();
             }
         }
     }
@@ -355,12 +353,12 @@ public class ServerUtils {
      * @return Returns the position in the hash collision list
      * @throws IOException 
      */
-    static int saveBlock(List<Byte> bytes, String hash, String home_dir) throws IOException{
+    static int saveBlock(byte[] bytes, long hash, String homeDir) throws IOException{
         boolean hotovo = false;
         int v = 0;
         while(!hotovo){
-            String name = ServerUtils.getName(hash, v);
-            Path p = Paths.get(home_dir, name);
+            String name = DBlock.getName(Long.toHexString(hash), v);            
+            Path p = Paths.get(homeDir, name);
             if(Files.exists(p)){
                 v++;
                 continue;

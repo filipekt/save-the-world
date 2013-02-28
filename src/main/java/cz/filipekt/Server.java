@@ -7,12 +7,17 @@ import difflib.DiffUtils;
 import difflib.Patch;
 import difflib.PatchFailedException;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.net.ProtocolException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.FileAlreadyExistsException;
@@ -21,19 +26,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.prefs.BackingStoreException;
-import java.util.prefs.Preferences;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
 
 /**
  *  Representation of the server which serves clients and takes care of the committed data
@@ -118,9 +124,15 @@ public final class Server {
         if (homeDir == null) {
             loadHomeDir();
         }
-        loadDB();                
-        loadScripts();
+        try {
+            loadDB();
+            loadScripts();
+        } catch (IOException | ClassNotFoundException ex){
+                System.err.println(ex.getMessage());
+                System.exit(1);
+        }                        
         reservedSpace = getReservedSpace(args);
+        zipBuffer = new ByteArrayOutputStream();
     }    
     
     private long getAvailableSpace() throws IOException{        
@@ -134,7 +146,6 @@ public final class Server {
         try {
             try(ServerSocket server_socket = new ServerSocket(listening_port)) {
                 System.out.println("Accepting a connection on port " + listening_port + " ...");
-//                for(int i = 0 ; i<10; i++){  
                 while(true){
                     try(Socket socket = server_socket.accept()) {
                         System.out.println("Connection accepted with " + socket.getInetAddress().getHostAddress());
@@ -147,7 +158,6 @@ public final class Server {
                     }
                 }
             }                            
-//            System.out.println("Accepting connections on port " + listening_port + " has been stopped ...");
         } catch (IOException ex) {
             System.err.println("Server socket not acquired");
         }
@@ -182,6 +192,18 @@ public final class Server {
                             oos.reset();
                             oos.writeObject(db);
                             oos.flush();
+                            break;
+                        case GET_LIGHT_DATABASE:
+                            LightDatabase ld = db.getLightDatabase();
+                            kryo.writeObject(kryo_out, ld, LightDatabase.getSerializer());
+                            kryo_out.flush();
+                            break;
+                        case ITEM_EXISTS:
+                            String[] targetPath = kryo.readObject(kryo_in, String[].class);                            
+                            if (targetPath != null){
+                                kryo.writeObject(kryo_out, db.itemExists(Arrays.asList(targetPath)));
+                                kryo_out.flush();
+                            }
                             break;
                         case CREAT_FILE:
                             size = kryo.readObject(kryo_in, long.class);
@@ -221,9 +243,9 @@ public final class Server {
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                             int bsize = kryo.readObject(kryo_in, Integer.TYPE);
                             List<DBlock> new_blocks;
-                            List<DBlock> block_list = new LinkedList<>();                        
+                            List<DBlock> block_list = new ArrayList<>();                        
                             do{
-                                new_blocks = loadBlock(kryo,kryo_in,bsize);
+                                new_blocks = loadBlock(kryo, kryo_in, kryo_out, bsize);
                                 if (new_blocks==null) {
                                     break;
                                 }
@@ -234,7 +256,7 @@ public final class Server {
                                 }
                             } while (true);                        
                             DFile file = db.findFile(fname);
-                            DVersion version = new DVersion(block_list, bsize, file.filename); 
+                            DVersion version = new DVersion(block_list, bsize, file.getName()); 
                             ServerUtils.linkBlocksToVersion(version);
                             if (file.futureNoOfConsecutiveScripts()> db.getScriptLimit() || !file.nonScriptExists()){
                                 db.addVersion(fname, version);
@@ -248,9 +270,11 @@ public final class Server {
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                             int version_index = kryo.readObject(kryo_in, int.class);
                             DFile ds = db.findFile(fname);
-                            List<Byte> res = serveGet(ds, version_index);
-                            kryo.writeObject(kryo_out, res.toArray(new Byte[0]));
-                            kryo_out.flush();
+                            if (ds != null){
+                                byte[] res = serveGet(ds, version_index);
+                                kryo.writeObject(kryo_out, res);
+                                kryo_out.flush();
+                            }
                             break;
                         case END:
                             break Vnejsi;
@@ -274,13 +298,41 @@ public final class Server {
                             }
                             kryo_out.flush();
                             break;
+                        case GET_ZIP:
+                            fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
+                            version_index = kryo.readObject(kryo_in, int.class);
+                            DItem item = db.getItem(fname);
+                            if (item != null){
+                                HashMap<DItem,String> fileList = new HashMap<>();
+                                getAllFiles(item, fileList, "");
+                                if ((fileList.size() == 1) && (!fileList.keySet().iterator().next().isDir())){
+                                    writeZipFile(item, fileList, version_index);
+                                } else {
+                                    writeZipFile(item, fileList, -1);
+                                }                                
+                                try (ByteArrayInputStream is = new ByteArrayInputStream(zipBuffer.toByteArray())){
+                                    int c;
+                                    List<Integer> data = new ArrayList<>();
+                                    while ((c=is.read())!=-1){
+                                        data.add(c);
+                                    }
+                                    kryo.writeObject(kryo_out, (Integer) data.size());
+                                    for (int i = 0; i<data.size(); i++){
+                                        kryo.writeObject(kryo_out, data.get(i));
+                                    }
+                                    kryo_out.flush();
+                                }
+                                zipBuffer.reset();
+                            }
+                            break;
                     }
-                } catch (IOException | ClassNotFoundException | MalformedPath | NotEnoughSpaceOnDisc ex) {
+                } catch (IOException | ClassNotFoundException | MalformedPath | NotEnoughSpaceOnDisc | BlockNotFound ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
         }
     }                
+     
     
     /**
      * From a client at "oin" gets either new block, a piece of "raw" data or a signal of the end of communication <br/>
@@ -292,20 +344,30 @@ public final class Server {
      * @throws IOException
      * @throws ClassNotFoundException 
      */
-    private List<DBlock> loadBlock(Kryo kryo, Input kryo_in, int bsize) 
-            throws IOException, ClassNotFoundException, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{        
-        String hash = kryo.readObject(kryo_in, String.class);
-        switch(hash){
+    private List<DBlock> loadBlock(Kryo kryo, Input kryo_in, Output kryo_out, int bsize) 
+            throws IOException, ClassNotFoundException, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{   
+        
+        String message = kryo.readObject(kryo_in, String.class);
+        while (message.equals("get_light_db")){
+            LightDatabase ld = db.getLightDatabase();
+            kryo.writeObject(kryo_out, ld, LightDatabase.getSerializer());
+            kryo_out.flush();
+            message = kryo.readObject(kryo_in, String.class);
+        }
+        switch(message){
             case "end":
                 return null;
             case "raw_data":                    
-                List<Byte> data = Arrays.asList(kryo.readObject(kryo_in, Byte[].class));
+                byte[] data = kryo.readObject(kryo_in, byte[].class);
                 return create_save_blocks(data,bsize);                    
-            default:
+            case "hash":
+                long hash = kryo.readObject(kryo_in, long.class);
                 String hash2 = kryo.readObject(kryo_in, String.class);
                 int valid = kryo.readObject(kryo_in, Integer.TYPE);
                 DBlock block = db.findBlock(hash, hash2);
-                return Arrays.asList(block);
+                return Arrays.asList(block);            
+            default:
+                throw new ProtocolException();
         }                
     }    
 
@@ -321,41 +383,41 @@ public final class Server {
      */
     void safelyDeleteVersion(DFile file, int versionNum) 
             throws TooFewVersions, IOException, PatchFailedException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
-        if (file.version_list.size()<=1){
+        if (file.getVersionList().size()<=1){
             throw new TooFewVersions();
         }
-        if((versionNum >= file.version_list.size())||(versionNum < 0)){
+        if((versionNum >= file.getVersionList().size())||(versionNum < 0)){
             throw new IndexOutOfBoundsException();
         } 
         
         // scripted version special case..?
         
-        if (versionNum == file.version_list.size()-1){
-            ServerUtils.unlinkBlocksFromVersion(file.version_list.get(versionNum));
-            scripts.remove(file.version_list.get(versionNum));
-            file.version_list.remove(versionNum);
+        if (versionNum == file.getVersionList().size()-1){
+            ServerUtils.unlinkBlocksFromVersion(file.getVersionList().get(versionNum));
+            scripts.remove(file.getVersionList().get(versionNum));
+            file.getVersionList().remove(versionNum);
         } else if (versionNum==0) {
-            if(file.version_list.get(1).script_form){
-                transformScriptToBlocks(file.version_list.get(0), file.version_list.get(1));
-                ServerUtils.unlinkBlocksFromVersion(file.version_list.get(0));
-                file.version_list.remove(0);
+            if(file.getVersionList().get(1).isScriptForm()){
+                transformScriptToBlocks(file.getVersionList().get(0), file.getVersionList().get(1));
+                ServerUtils.unlinkBlocksFromVersion(file.getVersionList().get(0));
+                file.getVersionList().remove(0);
             }
-        } else if (file.version_list.get(versionNum).script_form){
-            scripts.remove(file.version_list.get(versionNum));
-            file.version_list.remove(versionNum);
+        } else if (file.getVersionList().get(versionNum).isScriptForm()){
+            scripts.remove(file.getVersionList().get(versionNum));
+            file.getVersionList().remove(versionNum);
         } else {
             DVersion base = file.getLatestNonScript(versionNum - 1);
-            DVersion base2 = file.version_list.get(versionNum - 1);            
-            DVersion toDelete = file.version_list.get(versionNum);            
-            if (base2.script_form){
+            DVersion base2 = file.getVersionList().get(versionNum - 1);            
+            DVersion toDelete = file.getVersionList().get(versionNum);            
+            if (base2.isScriptForm()){
                 transformScriptToBlocks(base, base2);
             }
-            for(int i = versionNum+1; ((i < file.version_list.size())&&(file.version_list.get(i).script_form)); i++){
-                transformScriptToBlocks(toDelete, file.version_list.get(i));
-                ServerUtils.transformBlocksToScript(base2, file.version_list.get(i), home_dir, scripts);
+            for(int i = versionNum+1; ((i < file.getVersionList().size())&&(file.getVersionList().get(i).isScriptForm())); i++){
+                transformScriptToBlocks(toDelete, file.getVersionList().get(i));
+                ServerUtils.transformBlocksToScript(base2, file.getVersionList().get(i), home_dir, scripts);
             }
             ServerUtils.unlinkBlocksFromVersion(toDelete);
-            file.version_list.remove(toDelete);
+            file.getVersionList().remove(toDelete);
         }
     }
     
@@ -367,40 +429,30 @@ public final class Server {
      * @throws TooFewVersions 
      */
     private void unsafelyDeleteVersion(DFile file, int versionNum) throws TooFewVersions{
-        if((versionNum >= file.version_list.size())||(versionNum < 0)){
+        if((versionNum >= file.getVersionList().size())||(versionNum < 0)){
             throw new IndexOutOfBoundsException();
         } 
-        if (file.version_list.get(versionNum).script_form){
-            scripts.remove(file.version_list.get(versionNum));
-            file.version_list.remove(versionNum);            
+        if (file.getVersionList().get(versionNum).isScriptForm()){
+            scripts.remove(file.getVersionList().get(versionNum));
+            file.getVersionList().remove(versionNum);            
         } else {
-            ServerUtils.unlinkBlocksFromVersion(file.version_list.get(versionNum));
-            file.version_list.remove(versionNum);
-//            for (int i = versionNum + 1; ((i<file.version_list.size()) && (file.version_list.get(i).script_form)); i++){
-//                unsafelyDeleteVersion(file, i);
-//            }
-            while (file.version_list.get(versionNum).script_form){
+            ServerUtils.unlinkBlocksFromVersion(file.getVersionList().get(versionNum));
+            file.getVersionList().remove(versionNum);
+            while (file.getVersionList().get(versionNum).isScriptForm()){
                 unsafelyDeleteVersion(file, versionNum);
             }
         }
         
-    }
+    }        
     
     /**
      * Collects and deletes all blocks that are not referenced anywhere
      */
     private void collect_blocks() throws IOException{
-        System.out.println("Before GC: " + getAvailableSpace() + "B available");
-        synchronized(db){
-            for(Iterator<Entry<String,DBlock>> it = db.getBlockMap().entrySet().iterator(); it.hasNext(); ){
-                Entry<String,DBlock> entry = it.next();
-                String key = entry.getKey();
-                DBlock value = entry.getValue();
-                if(value.ref_count==0){
-                    ServerUtils.deleteBlock(key, home_dir);
-                    it.remove();
-                }                
-            }
+        System.out.println("Before GC: " + getAvailableSpace() + "B available");        
+        for (DBlock block : db.collectBlocks()){
+            String name = block.getName();
+            ServerUtils.deleteBlock(name, home_dir);
         }
         System.out.println("After GC: " + getAvailableSpace() + "B available");
     }
@@ -411,7 +463,7 @@ public final class Server {
     void removeOldItems() throws IOException{        
         Map<DVersion,DFile> versionsToDelete = findUnnecessaryVersions();
         for (Entry<DVersion,DFile> entry : versionsToDelete.entrySet()){
-            int verNum = entry.getValue().version_list.indexOf(entry.getKey());
+            int verNum = entry.getValue().getVersionList().indexOf(entry.getKey());
             try {
                 unsafelyDeleteVersion(entry.getValue(), verNum);
             } catch (TooFewVersions ex) {
@@ -428,10 +480,10 @@ public final class Server {
      * @return 
      */
     private Map<DVersion,DFile> findUnnecessaryVersions(){
-        List<CustomTuple> allVersions = new LinkedList<>();
+        List<CustomTuple> allVersions = new ArrayList<>();
         for (DFile file : db.getFileList()){
-            for (DVersion version : file.version_list){
-                if (!version.script_form){
+            for (DVersion version : file.getVersionList()){
+                if (!version.isScriptForm()){
                     allVersions.add(new CustomTuple(version,file));
                 }
             }
@@ -456,11 +508,11 @@ public final class Server {
             Files.createFile(f);
         }
         if(Files.size(f)==0){            
-            db = new Database(new HashMap<String,DItem>(), new TreeMap<String,DBlock>());
+            db = new Database(new HashMap<String,DItem>(), new TreeMap<String,DBlock>(), new TreeSet<Long>(), new TreeSet<String>());
         } else {            
             try(ObjectInputStream oin = new ObjectInputStream(Files.newInputStream(f))) {                                
                 db = (Database) oin.readObject();                
-            } 
+            }
         }
     }
     
@@ -542,7 +594,7 @@ public final class Server {
     /**
      * Each DVersion represented as a script, is here mapped to its script
      */
-    Map<DVersion,Patch> scripts;
+    private Map<DVersion,Patch> scripts;
     
     /**
      * Loads all the scripts from disc
@@ -579,30 +631,30 @@ public final class Server {
     /**
      * Returns the contents of the "index"-th version of "file_to_get", in case <br/>
      * it is need a transformation from script form is done
-     * @param version_list
+     * @param versionList
      * @return
      * @throws IOException
      * @throws BlockNotFound 
      */
-    private List<Byte> serveGet(DFile file_to_get, int index) {
+    private byte[] serveGet(DFile file_to_get, int index) {
         try{
-            DVersion verze = file_to_get.version_list.get(index);
-            if(verze.script_form){
+            DVersion verze = file_to_get.getVersionList().get(index);
+            if(verze.isScriptForm()){
                 DVersion zaklad;
                 int i;
                 for(i = index-1; i>=0; i--){
-                    if (!file_to_get.version_list.get(i).script_form){
+                    if (!file_to_get.getVersionList().get(i).isScriptForm()){
                         break;
                     }
                 }
-                zaklad = file_to_get.version_list.get(i);
-                List<Byte> obsahZaklad = ServerUtils.loadVersionFromDisc(zaklad, home_dir);
+                zaklad = file_to_get.getVersionList().get(i);
+                byte[] obsahZaklad = ServerUtils.loadVersionFromDisc(zaklad, home_dir);
                 String obsahZakladString = ServerUtils.byteToString(obsahZaklad);
-                List<String> list = new LinkedList<>();
+                List<String> list = new ArrayList<>();
                 list.add(obsahZakladString);
                 List<String> res = (List<String>) DiffUtils.patch(list, ServerUtils.getScript(verze,scripts));
                 String res1 = res.get(0);
-                return ServerUtils.stringToByte(res1);    
+                return ServerUtils.stringToByte(res1);                
             } else {
                 return ServerUtils.loadVersionFromDisc(verze, home_dir);
             }
@@ -629,7 +681,7 @@ public final class Server {
         }
     }
     
-    static final long AVAILABLE_SPACE_FACTOR = 5;       
+    private static final long AVAILABLE_SPACE_FACTOR = 5;       
     
     /**
      * Transforms DVersion "actual_object" into standard form - representation by blocks, <br/>
@@ -644,60 +696,66 @@ public final class Server {
     private void transformScriptToBlocks(DVersion reference_base, DVersion actual_object) 
             throws IOException, PatchFailedException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
         String obsahZaklad = ServerUtils.byteToString(ServerUtils.loadVersionFromDisc(reference_base, home_dir));
-        List<String> list = new LinkedList<>();
+        List<String> list = new ArrayList<>();
         list.add(obsahZaklad);
         List<String> list2;
         list2 = (List<String>) DiffUtils.patch(list, ServerUtils.getScript(actual_object,scripts));
         String novyObsah = list2.get(0);
         
-        //mam ted obsah skriptovane version_list, je treba naparsovat do bloku                
-        List<DBlock> bloky = create_save_blocks(ServerUtils.stringToByte(novyObsah), actual_object.block_size);
-        actual_object.script_form = false;
-        actual_object.blocks = bloky;
+        //mam ted obsah skriptovane versionList, je treba naparsovat do bloku                
+        List<DBlock> bloky = create_save_blocks(ServerUtils.stringToByte(novyObsah), actual_object.getBlockSize());
+        actual_object.setScriptForm(false);
+        actual_object.setBlocks(bloky);
         ServerUtils.linkBlocksToVersion(actual_object);
         scripts.remove(actual_object);
     }  
     
     /**
-     * Parses "data" into blocks of size "block_size". Their contents are saved <br/>
+     * Parses "data" into blocks of size "blockSize". Their contents are saved <br/>
      * on disc, DBlocks are returned in a list
      * @param data
-     * @param block_size
+     * @param blockSize
      * @return
      * @throws NoSuchAlgorithmException
      * @throws IOException 
      */
-    private LinkedList<DBlock> create_save_blocks(List<Byte> data, int block_size) 
+    private List<DBlock> create_save_blocks(byte[] data, int block_size) 
             throws NoSuchAlgorithmException, IOException, NotEnoughSpaceOnDisc{
-        LinkedList<DBlock> res = new LinkedList<>();
-        int i = 0;
-        while(i<data.size()){
-            int j = i + block_size;
-            if (j>data.size()){
-                j = data.size();
-            }
-            List<Byte> pars_data = data.subList(i, j);            
+        List<DBlock> res = new ArrayList<>();
+        int left = 0;
+        
+        while(left<data.length){
+            int right = left + block_size;
+//            if (right>data.length){
+//                right = data.length;
+//            }     
+            byte[] pars_data = Arrays.copyOfRange(data, left, right);
             int used = block_size;
-            if ((data.size() - i)<block_size){
-                used = data.size() - i;                       
+            if ((data.length - left)<block_size){
+                used = data.length - left;                       
             }
-            String hash = RollingHash.computeHash(pars_data);
+            long hash = RollingHash.computeHash(pars_data);
             String hash2 = RollingHash.computeHash2(pars_data);
-            if(!db.blockExists(hash, hash2)){
-                db.getBlockMap().put(hash, new DBlock(hash, hash2, block_size, used));
-            }
-            DBlock blok = db.findBlock(hash, hash2);
-            if (pars_data.size() >= getAvailableSpace()){                            
-                for(int i1 = 0; (i1<GC_ROUNDS_COUNT) && (pars_data.size() >= getAvailableSpace()); i1++){
+
+            if (pars_data.length >= getAvailableSpace()){                            
+                for(int i1 = 0; (i1<GC_ROUNDS_COUNT) && (pars_data.length >= getAvailableSpace()); i1++){
                     removeOldItems();                    
                 }            
-                if(pars_data.size() >= getAvailableSpace()){
+                if(pars_data.length >= getAvailableSpace()){
                     throw new NotEnoughSpaceOnDisc();
                 }
-            }
-            blok.col = ServerUtils.saveBlock(pars_data, hash, home_dir);            
-            res.addLast(blok);
-            i += block_size;
+            }            
+            int col = 0;            
+            DBlock newBlock = new DBlock(hash, hash2, block_size, used);
+            if(!db.blockExists(hash, hash2)){                
+                col = ServerUtils.saveBlock(pars_data, hash, home_dir);            
+                newBlock.setCol(col);
+                db.addBlock(newBlock);
+            } else {
+                newBlock = db.findBlock(hash, hash2);
+            }            
+            res.add(newBlock);
+            left += block_size;
         }
         return res;
     }    
@@ -706,6 +764,73 @@ public final class Server {
      * Upper bound on the number of block collections before giving up
      */
     private static final int GC_ROUNDS_COUNT = 5;
+    
+    void getAllFiles(DItem dir, Map<DItem,String> fileList, String path){
+        if (path.equals("")){
+            fileList.put(dir, path);
+            if (dir.isDir()){
+                getAllFiles(dir, fileList, dir.getName());
+            } 
+        } else {
+            for (DItem file : ((DDirectory)dir).getItemMap().values()){
+                fileList.put(file, path);
+                if (file.isDir()){
+                        getAllFiles(file, fileList, path + File.separator + file.getName());
+                }
+            }       
+        }
+    }
+
+    /**
+     * Temporary space to save zipped files && folders before they are sent to a client's machine.
+     */
+    private ByteArrayOutputStream zipBuffer;    
+    
+    void writeZipFile(DItem directoryToZip, Map<DItem,String> fileList, int versionNumber) 
+            throws FileNotFoundException, IOException {            
+            try (ZipOutputStream zos = new ZipOutputStream(zipBuffer)) {
+                    for (Entry<DItem,String> entry : fileList.entrySet()) {
+                        DItem file = entry.getKey();
+                        if (!file.isDir()) {
+                                addToZip(directoryToZip, file, versionNumber, zos, entry.getValue());
+                        } else if (((DDirectory)file).getItemMap().isEmpty()){
+                                addToZip(directoryToZip, file, versionNumber, zos, entry.getValue());                            
+                        }
+                    }
+            }            
+    }
+    
+    void addToZip(DItem directoryToZip, DItem item, int versionNumber, ZipOutputStream zos, String path) 
+            throws FileNotFoundException, IOException {
+        if (item.isDir()){
+            String zipFilePath;
+            if (!path.equals("")) {
+                zipFilePath = path + "/" + item.getName();
+            } else {
+                zipFilePath = item.getName();
+            }    
+            zipFilePath += "/";
+            ZipEntry zipEntry = new ZipEntry(zipFilePath);
+            zos.putNextEntry(zipEntry);                
+            zos.closeEntry();
+        } else {
+            DFile file = (DFile) item;
+            byte[] data = serveGet(file, versionNumber==-1 ? file.getVersionList().size()-1 : versionNumber);
+            String zipFilePath;
+            if (!path.equals("")) {
+                zipFilePath = path + "/" + file.getName();
+            } else {
+                zipFilePath = file.getName();
+            }    
+            ZipEntry zipEntry = new ZipEntry(zipFilePath);
+            zos.putNextEntry(zipEntry);
+            for (Byte b : data){
+                int c = ((int)b) + 128;
+                zos.write(c);
+            }
+            zos.closeEntry();
+        }
+    }   
 }
 
 class BlockNotFound extends Exception {}
@@ -727,17 +852,17 @@ class CustomTuple implements Comparable<CustomTuple> {
     }
     
     int getNumberOfNewerVers(){
-        int index = f.version_list.indexOf(v);
+        int index = f.getVersionList().indexOf(v);
         int count = 0;
-        for (int i = index+1; i<f.version_list.size(); i++){
-            if (!f.version_list.get(i).script_form){
+        for (int i = index+1; i<f.getVersionList().size(); i++){
+            if (!f.getVersionList().get(i).isScriptForm()){
                 count++;
             }
         }
         return count;
     }
     private int getApprSize(){
-        return (v.block_size * v.blocks.size());
+        return (v.getBlockSize() * v.getBlocks().size());
     }
     
     /**

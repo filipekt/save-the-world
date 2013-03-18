@@ -1,6 +1,5 @@
 package cz.filipekt;
 
-import difflib.DiffUtils;
 import difflib.Patch;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -11,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +54,26 @@ public class ServerUtils {
     }
     
     /**
+     * Builds a typical String representation of the path specified </br>
+     * as a list (src) of all the items on the path
+     * @param src
+     * @return 
+     */
+   static String constructPath(List<String> src){
+        if (src == null){            
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i<src.size(); i++){
+            if (i!=0){
+                sb.append("/");
+            }
+            sb.append(src.get(i));
+        }        
+        return sb.toString();
+    }    
+    
+    /**
      * Computer the validBytes of the contents of the directory, recursively
      * @param p
      * @return
@@ -72,7 +92,8 @@ public class ServerUtils {
     }    
     
     /**
-     * Loads the contents of the "block" from disc and return it as array of bytes
+     * Loads the contents of the "block" from disc and return it as array of bytes.
+     * Only valid bytes are returned, ie. the padding 0s are not included.
      * @param block
      * @return
      * @throws IOException 
@@ -100,7 +121,7 @@ public class ServerUtils {
      * @throws BlockNotFound 
      */
     static byte[] loadVersionFromDisc(DVersion version, String dir) 
-            throws IOException, BlockNotFound{
+            throws IOException, BlockNotFound{        
         int versionSize = version.estimateSize();
         byte[] fileContent = new byte[versionSize];
         int i = 0;
@@ -118,27 +139,26 @@ public class ServerUtils {
     
     
     /**
-     * Encodes a String into an array of bytes
+     * Encodes a String into an array of bytes.
+     * The input String object is expected to have been created by the </br>
+     * byteToString(..) method, because it only takes into account the lower </br>
+     * 8 buts of each String character.
      * @param data
      * @return 
      */
-    static byte[] stringToByte(String data){        
-//        List<Byte> res = new ArrayList<>();    
+    static byte[] stringToByte(String data){           
         if(data!=null && !data.isEmpty()){
             int length = data.length();
             byte[] res = new byte[length];
-            int i = 0;
-            
+            int i = 0;            
             for(char c : data.toCharArray()){
                 byte b = (byte)((int)c -128);
-//                res.add(b);
                 res[i++] = b;
             }
             return res;
         } else {
             return new byte[0];
         }
-//        return res;
     }          
     
     /**
@@ -159,12 +179,8 @@ public class ServerUtils {
                             return c*16;
                         case 4:
                             return c*16*16;
-                        case 5:
-                        case 6:
                         default:
                             return c*16*16*16;
-//                        default:
-//                            return c*256*256;        
                     }
         } catch (IOException ex) {
             Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
@@ -245,7 +261,14 @@ public class ServerUtils {
      * @param args
      * @return 
      */
-    static String getArgVal(String[] args, String opt){
+    static String getArgVal(String[] args, String opt, boolean watchQuoting){
+        if ((args == null) || (args.length==0) || (opt==null) || opt.isEmpty()){
+            return null;
+        }
+        if (watchQuoting){
+            List<String> args2 = ServerUtils.concatQuotes(Arrays.asList(args));
+            args = args2.toArray(new String[0]);
+        }
         try{
             String val = null;
             for(int i = 0; i<args.length; i++){
@@ -262,6 +285,21 @@ public class ServerUtils {
         }
     }
     
+    /**
+     * Determines, whether the switch -opt is present in the program arguments.
+     * @param args
+     * @param opt
+     * @return 
+     */
+    static boolean isSwitchPresent(String[] args, String opt){
+        for (String s : args){
+            if (s.equals("-" + opt)){
+                return true;
+            }
+        }
+        return false;
+    }
+    
     static boolean isLong(String s){
         try{
             Long.parseLong(s);
@@ -269,66 +307,26 @@ public class ServerUtils {
         } catch (NumberFormatException ex){
             return false;
         }
-    }
-    
-    /**
-     * Transforms the "new_vers" version into the script form against the "base" version </br>
-     * @param zakladni
-     * @param nova
-     * @throws IOException 
-     */
-    static void transformBlocksToScript(DVersion base, DVersion new_vers, 
-            String home_dir, Map<DVersion,Patch> scripts) throws IOException, BlockNotFound{
-//        List<Byte> obsahSouboru = new LinkedList<>();
-//        for(DBlock blok : base.blocks){
-//            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
-//            obsahSouboru.addAll(blokData);
-//        }
-//        String obsahZakladni = ServerUtils.byteToString(obsahSouboru);
-        String obsahZakladni = ServerUtils.byteToString(ServerUtils.loadVersionFromDisc(base, home_dir));
+    }       
         
-//        obsahSouboru.clear();
-//        for(DBlock blok : new_vers.blocks){
-//            List<Byte> blokData = ServerUtils.loadBlockFromDisc(blok, home_dir);
-//            obsahSouboru.addAll(blokData);            
-//        }
-//        String obsahNova = ServerUtils.byteToString(obsahSouboru);
-        String obsahNova = ServerUtils.byteToString(ServerUtils.loadVersionFromDisc(new_vers, home_dir));
-        List<String> l1 = new LinkedList<>();
-        List<String> l2 = new LinkedList<>();
-        l1.add(obsahZakladni);
-        l2.add(obsahNova);
-        Patch patch = DiffUtils.diff(l1,l2);
-        new_vers.setScriptForm(true);
-        setScript(new_vers, patch,scripts);
-        ServerUtils.unlinkBlocksFromVersion(new_vers);
-        new_vers.setBlocks(null);
-    }   
-    
-    /**
-     * Add an editational script into database
-     * @param version_list
-     * @param skript 
-     */
-    static void setScript(DVersion verze, Patch skript, Map<DVersion,Patch> scripts){
-        scripts.put(verze, skript);
-    }
-    
-
-    
     /**
      * Decreases the reference count of every DBlock pointed to by the version
      * @param version 
      */
     static void unlinkBlocksFromVersion(DVersion version){
         if(version.getBlocks() != null){
-            for (DBlock blok : version.getBlocks()){
-                blok.decrementRefCount();
+            for (DBlock block : version.getBlocks()){
+                block.decrementRefCount();
             }
             version.setBlocks(null);
         }
     }
     
+    /**
+     * For each DBlock used by the specified version, this method increases </br>
+     * its reference count by one.
+     * @param version 
+     */
     static void linkBlocksToVersion(DVersion version){
         if(version.getBlocks() != null){
             for (DBlock block : version.getBlocks()){

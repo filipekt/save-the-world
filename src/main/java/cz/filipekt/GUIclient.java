@@ -11,7 +11,6 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
-import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -24,8 +23,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.ResourceBundle;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.prefs.BackingStoreException;
+import java.util.prefs.Preferences;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
@@ -86,8 +88,8 @@ public class GUIclient {
      * @param port
      * @throws IOException 
      */
-    private void connect(String comp, int port) throws IOException{        
-        client = new Client(comp, port, new BufferedReader(new InputStreamReader(System.in)));        
+    private void connect(String comp, int port, Locale locale) throws IOException{        
+        client = new Client(comp, port, new BufferedReader(new InputStreamReader(System.in)), locale, null, false);        
     }
     
     /**
@@ -163,7 +165,7 @@ public class GUIclient {
             @Override
             public void actionPerformed(ActionEvent e) {
                 try {
-                    connect(compField.getText(), Integer.parseInt(portField.getText()));
+                    connect(compField.getText(), Integer.parseInt(portField.getText()), locale);
                     createAndShowBrowserFrame();
                 } catch (NumberFormatException | IOException ex) {                    
                     JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
@@ -256,6 +258,70 @@ public class GUIclient {
         }
     }
     
+    private JFrame settingsFrame;
+    
+    private void createAndShowSettingsFrame(){
+        settingsFrame = new JFrame("settings");
+        settingsFrame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        Container pane = settingsFrame.getContentPane();
+        pane.setLayout(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        
+        JLabel defaultDestinationLabel = new JLabel(messages.getString("default_destination") + ":");
+        c.fill = GridBagConstraints.BOTH;
+        c.gridheight = 1;
+        c.gridwidth = 1;
+        c.gridx = 0;
+        c.gridy = 0;
+        c.weightx = 1;
+        c.weighty = 1;             
+        pane.add(defaultDestinationLabel, c);
+        
+        final JTextField defaultDestinationField = new JTextField();
+        defaultDestinationField.setText(getDefaultDestination().toAbsolutePath().toString());
+        c.gridx = 0;
+        c.gridy = 1;    
+        c.gridwidth = 2;
+        pane.add(defaultDestinationField, c);
+        
+        JButton okButton = new JButton(messages.getString("ok"));
+        c.gridx = 0;
+        c.gridy = 2;
+        c.gridwidth = 1;
+        okButton.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent ae) {
+                try {
+                    Preferences pref = Preferences.userNodeForPackage(GUIclient.class);
+                    pref.put("default_destination", defaultDestinationField.getText());
+                    pref.flush();
+                    settingsFrame.setVisible(false);
+                } catch (BackingStoreException ex) {
+                    Logger.getLogger(GUIclient.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            }
+        });
+        pane.add(okButton, c);
+        
+        JButton stornoButton = new JButton(messages.getString("storno"));
+        c.gridx = 1;
+        c.gridy = 2;
+        stornoButton.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent ae) {
+                settingsFrame.setVisible(false);
+            }
+        });
+        pane.add(stornoButton, c);
+        
+        settingsFrame.setLocationByPlatform(true);
+        settingsFrame.setSize(500, 100);
+        settingsFrame.setResizable(true);
+        settingsFrame.setVisible(true);
+    }       
+    
     /**
      * Creates and shows the window containg the tree-like view of </br>
      * the contents of the server file database.
@@ -268,7 +334,7 @@ public class GUIclient {
         pane.setLayout(new GridBagLayout());
         GridBagConstraints c = new GridBagConstraints();
         
-        topNode = new DefaultMutableTreeNode("root", true);
+        topNode = new DefaultMutableTreeNode(messages.getString("rootnode"), true);
         createTreeNodes(topNode);    
         treeModel = new DefaultTreeModel(topNode);
         tree = new JTree(treeModel);
@@ -329,6 +395,18 @@ public class GUIclient {
         c.gridx = 1;
         c.gridy = 2;
         pane.add(zipButton,c);
+        
+        JButton settingsButton = new JButton(messages.getString("settings"));
+        c.gridx = 0;
+        c.gridy = 3;
+        settingsButton.addActionListener(new ActionListener() {
+
+            @Override
+            public void actionPerformed(ActionEvent ae) {
+                createAndShowSettingsFrame();
+            }
+        });
+        pane.add(settingsButton, c);
         
         browserFrame.setSize(400, 400);
         browserFrame.setResizable(false);
@@ -601,34 +679,15 @@ public class GUIclient {
             }
         }
     }    
-    
-    /**
-     * Builds a typical String representation of the path specified </br>
-     * as a list (src) of all the items on the path
-     * @param src
-     * @return 
-     */
-   private String constructPath(List<String> src){
-        if (src == null){            
-            return null;
-        }
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i<src.size(); i++){
-            if (i!=0){
-                sb.append("/");
-            }
-            sb.append(src.get(i));
-        }        
-        return sb.toString();
-    }
-   
+      
    /**
     * Takes care of the add command
     */
     private void serveAdd(){
         if (selectedPath == null){            
-            JOptionPane.showMessageDialog(browserFrame, messages.getString("no_destin_1"), messages.getString("no_destin_2"), JOptionPane.WARNING_MESSAGE);          
-            return;
+//            JOptionPane.showMessageDialog(browserFrame, messages.getString("no_destin_1"), messages.getString("no_destin_2"), JOptionPane.WARNING_MESSAGE);          
+//            return;
+            selectedPath = new LinkedList<>();
         }  
         final JFileChooser fc = new JFileChooser();
         fc.setLocale(locale);
@@ -654,13 +713,13 @@ public class GUIclient {
             } else if (isSelectedPathVersion()){
                 selectedPathStrings.removeLast();
             }
-            String target = constructPath(selectedPathStrings);
+            String target = ServerUtils.constructPath(selectedPathStrings);
             List<String> request = new LinkedList<>();
             request.add("add");
             request.add(source.toString());
             request.add(target);
             try {
-                client.serveAdd(request);
+                client.serveAdd(request, browserFrame);
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
             } catch (    IOException | NoSuchAlgorithmException ex) {
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload_error"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
@@ -669,7 +728,7 @@ public class GUIclient {
     }
     
     /**
-     * Tells whether the user is trying to download a directory into a regular file.
+     * Returns false if and only if the user is trying to download a directory into a regular file.
      * @param source
      * @param destination
      * @return 
@@ -677,6 +736,20 @@ public class GUIclient {
     private boolean isCompatible(List<TreeNode> source, Path destination){
         Object item = ((DefaultMutableTreeNode)source.get(source.size() - 1)).getUserObject();        
         return  item instanceof DVersion || !((DItem)item).isDir() || Files.isDirectory(destination);            
+    }
+    
+    /**
+     * Returns the default destination where files and directories will be downloaded.
+     * @return 
+     */
+    private Path getDefaultDestination(){
+        Preferences pref = Preferences.userNodeForPackage(GUIclient.class);
+        String val = pref.get("default_destination", "");
+        if (val.equals("")){
+            return Paths.get(System.getProperty("user.home"));
+        } else {
+            return Paths.get(val);
+        }
     }
     
     /**
@@ -693,7 +766,7 @@ public class GUIclient {
         }
         Path destination;
         if (defaultDestination){
-            destination = Paths.get(System.getProperty("user.home"));
+            destination = getDefaultDestination();
         } else {
             final JFileChooser fc = new JFileChooser();
             fc.setLocale(locale);
@@ -722,95 +795,33 @@ public class GUIclient {
                 return;
             } 
         }
-        if (isSelectedPathDir()){                    
-            try {
-                LinkedList<String> selectedPathStrings = new LinkedList<>();
-                for(TreeNode tn : selectedPath){
-                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                }
-                receiveDirectory(selectedPathStrings, destination, zip, true);
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-            } catch (FileNotFoundException ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-            }
-        } else if (isSelectedPathVersion()){
-            try {
-                LinkedList<String> selectedPathStrings = new LinkedList<>();
-                for(TreeNode tn : selectedPath){
-                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                }
+        LinkedList<String> selectedPathStrings = new LinkedList<>();
+        for(TreeNode tn : selectedPath){
+            selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
+        }     
+        try {
+            boolean res;
+            if (isSelectedPathDir()){                    
+                res = client.receiveDirectory(selectedPathStrings, destination, zip, true, db, browserFrame);
+            } else if (isSelectedPathVersion()){
                 DVersion version = (DVersion)((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject();
                 DFile file = db.findFile(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
                 if (file == null) {
                     throw new FileNotFoundException();
                 }
-                receiveVersion(destination, selectedPathStrings.subList(0, selectedPathStrings.size()-1), file.getVersionList().indexOf(version), zip);
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-            } catch (FileNotFoundException ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-            }                
-
-        } else { // selected item is a file
-            try {
-                LinkedList<String> selectedPathStrings = new LinkedList<>();
-                for(TreeNode tn : selectedPath){
-                    selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
-                }
-                receiveFile(destination, selectedPathStrings, zip);
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-            } catch (FileNotFoundException ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-            } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
-                JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                res = client.receiveVersion(destination, selectedPathStrings.subList(0, selectedPathStrings.size()-1), file.getVersionList().indexOf(version), zip, db, browserFrame);
+            } else { // selected item is a file
+                res = client.receiveFile(destination, selectedPathStrings, zip, db, browserFrame);                
             }
-        }
-    }
-    
-    /**
-     * Given the directory "src" on server and the path "dest" at the client, </br>
-     * this method downloads the contents of "src" to "dest"
-     * @param src
-     * @param dest
-     * @throws IOException
-     * @throws ClassNotFoundException
-     * @throws WrongVersionNumber 
-     */
-    private void receiveDirectory(List<String> src, Path dest, final boolean zip, final boolean toplevel) 
-            throws IOException, ClassNotFoundException, WrongVersionNumber{
-        if (zip){
-            receiveFile(dest, src, true);
-        } else {
-            if (toplevel){
-                Path dest2 = Paths.get(dest.toAbsolutePath().toString(), src.get(src.size()-1));
-                Files.createDirectories(dest2);
-                dest = dest2;
+            if (res){
+                JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
             }
-            if (db.getItem(src).isDir()){
-                DDirectory dir = (DDirectory) db.getItem(src);
-                for (Entry<String,DItem> entry : dir.getItemMap().entrySet()){
-                    Path dest2 = Paths.get(dest.toAbsolutePath().toString(), entry.getKey());
-                    LinkedList<String> src2 = new LinkedList<>();
-                    src2.addAll(src);
-                    src2.add(entry.getKey());                    
-                    if(entry.getValue().isDir()){
-                        // create the dir if needed                    
-                        if (Files.notExists(dest2)){
-                            Files.createDirectories(dest2);
-                        }
-                        // continue recursively in depth                    
-                        receiveDirectory(src2, dest2, false, false);
-                    } else {
-                        // handle entry as a regular file
-                        receiveFile(dest2, src2, false);
-                    }
-                }
-            }            
-        }
-    }
+        } catch (FileNotFoundException ex){
+            JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+        } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+            JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+        }        
+    }    
     
     /**
      * Determines, whether the selected item in the graphical view of server </br>
@@ -839,78 +850,6 @@ public class GUIclient {
     /**
      * A local copy of the server file database
      */
-    private Database db;
+    private Database db;    
     
-    /**
-     * Given the file "src" on server and the path "dest" at the client, </br>
-     * this method downloads the contents of "src" to "dest", creating the </br>
-     * target file if necessary
-     * @param dest
-     * @param src
-     * @throws IOException
-     * @throws ClassNotFoundException
-     * @throws WrongVersionNumber 
-     */
-    private void receiveFile(Path dest, List<String> src, final boolean zip) 
-            throws IOException, ClassNotFoundException, WrongVersionNumber{  
-        if (src == null){
-            return;
-        } 
-        Path dest2;
-        if (Files.isDirectory(dest)){
-            dest2 = Paths.get(dest.toAbsolutePath().toString(), src.get(src.size()-1) + (zip ? ".zip" : ""));        
-        } else {
-            dest2 = dest;
-        }        
-        List<String> request = new LinkedList<>();
-        request.add(zip ? "get_zip" : "get");
-        request.add(constructPath(src));
-        int[] data = client.serveGetBin(request, zip);
-        if (data == null){            
-            throw new FileNotFoundException();
-        }
-        try (BufferedOutputStream bos = new BufferedOutputStream(Files.newOutputStream(dest2))){
-            for(int i : data){
-                bos.write(i);
-            }
-        }        
-    }
-    
-    /**
-     * Given the file "sourceFile" on server, it's version "version" and the path "destination" at the client, </br>
-     * this method downloads the contents of the version to "destination"
-     * @param destination
-     * @param sourceFile
-     * @param version
-     * @throws IOException
-     * @throws ClassNotFoundException
-     * @throws WrongVersionNumber 
-     */
-    private void receiveVersion(Path destination, List<String> sourceFile, final int versionNumber, final boolean zip) 
-            throws IOException, ClassNotFoundException, WrongVersionNumber{
-        if (sourceFile == null){
-            return;
-        } 
-        Path dest2;
-        if (Files.isDirectory(destination)){
-            String fname = sourceFile.get(sourceFile.size()-1);
-            dest2 = Paths.get(destination.toAbsolutePath().toString(), fname + (zip ? ".zip" : ""));
-        } else {
-            dest2 = destination;
-        }        
-        List<String> request = new LinkedList<>();
-        request.add(zip ? "get_zip" : "get");
-        request.add(constructPath(sourceFile));
-        request.add(Integer.toString(versionNumber));        
-        
-        int[] data = client.serveGetBin(request, zip);
-        if (data == null){            
-            throw new FileNotFoundException();
-        }
-        try (BufferedOutputStream bos = new BufferedOutputStream(Files.newOutputStream(dest2))){
-            for(int i : data){
-                bos.write(i);
-            }
-        }           
-    }    
 }

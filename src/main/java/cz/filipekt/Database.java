@@ -8,6 +8,7 @@ import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.ResourceBundle;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
@@ -55,18 +57,26 @@ public final class Database implements Externalizable{
      */
     private TreeSet<String> blockSet2;
      
-    void refreshBlockSet(){
-        blockSet = new TreeSet<>();
-        blockSet2 = new TreeSet<>();
-        for (DBlock block : blockMap.values()){
-            blockSet.add(block.getHash());
-            blockSet2.add(block.getHash2());            
+    /**
+     * Updates the blockSet and blockSet2 sets (databases of block hash values).
+     * Source of the new information is the blockMap.
+     */
+    private void refreshBlockSet(){
+        synchronized (lockObject){
+            blockSet = new TreeSet<>();
+            blockSet2 = new TreeSet<>();
+            for (DBlock block : blockMap.values()){
+                if (block != null){
+                    blockSet.add(block.getHash());
+                    blockSet2.add(block.getHash2());            
+                }
+            }
         }
     }
     /**
      * The upper limit on the number of consecutive versions saved as editational script
      */
-    private int scriptLimit = 2;
+    private volatile int scriptLimit = 2;
     
     /**
      * Marks the version of serialized state used. 
@@ -74,36 +84,37 @@ public final class Database implements Externalizable{
     private static final long serialVersionUID = 2012_12_29L;
     
     /**
+     * Lock object is used for synchronization.
+     */
+    private final Object lockObject = new Object();
+    
+    /**
      * A linear list view of all the DFiles present in the database
      */
-    private List<DFile> fileList = new LinkedList<>();
+    private Collection<DFile> regularFiles = new LinkedList<>();
     
     /**
      * Getter for scriptLimit
      * @return 
      */
-    public int getScriptLimit(){
+    int getScriptLimit(){
         return scriptLimit;
-    }
-    
-//    /**
-//     * Getter for blockMap
-//     * @return 
-//     */
-//    TreeMap<String,DBlock> getBlockMap(){
-//        return blockMap;
-//    }
+    }  
     
     Map<String,DItem> getFileMap(){
-        return fileMap;
+        synchronized (lockObject){
+            return fileMap;
+        }
     }
     
     /**
-     * Getter for fileList
+     * Getter for regularFiles
      * @return 
      */
-    List<DFile> getFileList(){
-        return fileList;
+    Collection<DFile> getFileCollection(){
+        synchronized (lockObject){
+            return regularFiles;
+        }
     }
     
     /**
@@ -112,34 +123,38 @@ public final class Database implements Externalizable{
      * @return 
      */
     boolean makeDirs(List<String> path){
-        Map<String,DItem> current = fileMap;
-        for(String s : path){
-            if(!current.containsKey(s)){
-                current.put(s, new DDirectory(s));
-            } else if (!current.get(s).isDir()){
-                return false;
+        synchronized (lockObject){
+            Map<String,DItem> current = fileMap;
+            for(String s : path){
+                if(!current.containsKey(s)){
+                    current.put(s, new DDirectory(s));
+                } else if (!current.get(s).isDir()){
+                    return false;
+                }
+                current = ((DDirectory)current.get(s)).getItemMap();
             }
-            current = ((DDirectory)current.get(s)).getItemMap();
+            return true;
         }
-        return true;
     }
     
     /**
      * Adds a new file specified by "path" to the database "filesystem"
      * @param name 
      */
-    void addFile(List<String> path) throws MalformedPath{        
-        if(!makeDirs(path.subList(0, path.size()-1))){
-            throw new MalformedPath();
+    void addFile(List<String> path) throws MalformedPath{  
+        synchronized (lockObject){
+            if(!makeDirs(path.subList(0, path.size()-1))){
+                throw new MalformedPath();
+            }
+            DFile new_file = new DFile(path.get(path.size()-1));
+            DDirectory dir = (DDirectory) getItem(path.subList(0, path.size()-1));
+            if(dir!=null){
+                dir.getItemMap().put(new_file.getName(), new_file);
+            } else {
+                fileMap.put(new_file.getName(), new_file);
+            }
+            regularFiles.add(new_file);
         }
-        DFile new_file = new DFile(path.get(path.size()-1));
-        DDirectory dir = (DDirectory) getItem(path.subList(0, path.size()-1));
-        if(dir!=null){
-            dir.getItemMap().put(new_file.getName(), new_file);
-        } else {
-            fileMap.put(new_file.getName(), new_file);
-        }
-        fileList.add(new_file);
     }
     
     /**
@@ -147,16 +162,18 @@ public final class Database implements Externalizable{
      * @param path
      * @return 
      */
-    DItem getItem(List<String> path){        
+    DItem getItem(List<String> path){          
         try{
-            DItem current = fileMap.get(path.get(0));
-            for(int i = 1; i<path.size(); i++){
-                current = ((DDirectory)current).getItemMap().get(path.get(i));            
+            synchronized (lockObject){
+                DItem current = fileMap.get(path.get(0));
+                for(int i = 1; i<path.size(); i++){
+                    current = ((DDirectory)current).getItemMap().get(path.get(i));            
+                }
+                return current;
             }
-            return current;
         } catch (Exception ex){
             return null;
-        }
+        }        
     }
     
     /**
@@ -165,14 +182,16 @@ public final class Database implements Externalizable{
      * @return 
      */
     DFile findFile(List<String> path){
-        DItem item = getItem(path);
-        if(item==null){
-            return null;
-        }
-        if(!item.isDir()){
-            return (DFile)item;
-        } else {
-            return null;
+        synchronized (lockObject){
+            DItem item = getItem(path);
+            if(item==null){
+                return null;
+            }
+            if(!item.isDir()){
+                return (DFile)item;
+            } else {
+                return null;
+            }
         }
     }    
     
@@ -182,8 +201,10 @@ public final class Database implements Externalizable{
      * @param ver 
      */
     void addVersion(List<String> path, DVersion ver){
-        DFile file = (DFile) getItem(path);
-        file.getVersionList().add(ver);  
+        synchronized (lockObject){
+            DFile file = (DFile) getItem(path);
+            file.getVersionList().add(ver);  
+        }
     }    
     
     /**
@@ -200,28 +221,36 @@ public final class Database implements Externalizable{
     }
     
     /** 
-     * Finds and return a DBlok specified by its two hash values
+     * Finds and return a DBlock specified by its two hash values
      * @param hash
      * @return 
      */
-    DBlock findBlock(long hash, String hash2){        
-        for (DBlock bl : blockMap.values()){
-            if ((bl.getHash() == hash) && bl.getHash2().equals(hash2)){
-                return bl;
+    DBlock findBlock(long hash, String hash2){
+        synchronized (lockObject){
+            if (!blockExists(hash, hash2)){
+                return null;
+            } else {
+                for (DBlock bl : blockMap.values()){
+                    if ((bl.getHash() == hash) && bl.getHash2().equals(hash2)){
+                        return bl;
+                    }
+                }
+                return null;
             }
         }
-        return null;
     }
 
     
-    /**
-     * Returns true if and only if a block with a rolling hash value "hash" is present in the database
-     * @param hash
-     * @return 
-     */
-    boolean blockExists(long hash){
-        return blockSet.contains(hash);
-    }
+//    /**
+//     * Returns true if and only if a block with a rolling hash1 value "hash1" is present in the database
+//     * @param hash1
+//     * @return 
+//     */
+//    boolean blockExists(long hash1){
+//        synchronized (lockObject){
+//            return blockSet.contains(hash1);
+//        }
+//    }
     
     /**
      * Returns true if and only if a block specified by the two hash <br/>
@@ -231,8 +260,9 @@ public final class Database implements Externalizable{
      * @return 
      */
     boolean blockExists(long hash1, String hash2){
-        LightDatabase ld = getLightDatabase();
-        return ld.blockExists1(hash1) && ld.blockExists2(hash2);
+        synchronized (lockObject){
+            return blockSet.contains(hash1) && blockSet2.contains(hash2);
+        }
     }    
 
     public Database(){}
@@ -243,27 +273,42 @@ public final class Database implements Externalizable{
         this.blockSet2 = blockSet2;
     }
     
+    /**
+     * Iterates through all the blocks and returns those with reference count equal to zero.
+     * These are also removed from the block database.
+     * @return 
+     */
     Collection<DBlock> collectBlocks(){
-        Collection<DBlock> res = new HashSet<>();
-        for(Iterator<Map.Entry<String,DBlock>> it = blockMap.entrySet().iterator(); it.hasNext(); ){
-            Map.Entry<String,DBlock> entry = it.next();
-            String key = entry.getKey();
-            DBlock value = entry.getValue();
-            if(value.getRefCount() == 0){
-                res.add(value);
-                it.remove();
-            }                
-        }        
-        refreshBlockSet();        
-        return res;
+        synchronized (lockObject){
+            Collection<DBlock> res = new HashSet<>();       
+            Iterator<Map.Entry<String,DBlock>> it = blockMap.entrySet().iterator();
+            while(it.hasNext()){
+                Map.Entry<String,DBlock> entry = it.next();
+                DBlock value = entry.getValue();
+                if((value == null) || (value.getRefCount() == 0)){
+                    if (value != null){
+                        res.add(value);
+                    }
+                    it.remove();
+                }                
+            }        
+            refreshBlockSet();        
+            return res;
+        }
     }
     
+    /**
+     * Add the specified block in the block database.
+     * @param block 
+     */
     void addBlock(DBlock block){
-        if (block != null){
-            String name = block.getName();
-            blockMap.put(name, block);
-            blockSet.add(block.getHash());
-            blockSet2.add(block.getHash2());
+        synchronized(lockObject){
+            if (block != null){
+                String name = block.getName();
+                blockMap.put(name, block);
+                blockSet.add(block.getHash());
+                blockSet2.add(block.getHash2());
+            }
         }
     }
     
@@ -272,51 +317,56 @@ public final class Database implements Externalizable{
      * @param item
      * @param level 
      */
-    void printContents(DItem item, int level){
-        if(level==0){
-            System.out.println("Obsah db:");
-        }
-        if(item==null){
-            for(DItem it : fileMap.values()){
-                printContents(it, level+1);
+    void printContents(DItem item, final int level, final boolean verbose, PrintStream out, ResourceBundle messages){
+        synchronized (lockObject){
+            if(level==0){
+                out.println(messages.getString("db_contents") + ":");
             }
-        } else if (item.isDir()){
-            StringBuilder sb = new StringBuilder();
-            for(int i = 0;i<level;i++){
-                sb.append(' ');
-            }
-            String prefix = sb.toString();
-            DDirectory dir = (DDirectory) item;
-            System.out.println(prefix + dir.getName());            
-            for(DItem it : ((DDirectory)item).getItemMap().values()){
-                printContents(it, level+1);
-            }
-        } else {
-            StringBuilder sb = new StringBuilder();
-            for(int i = 0;i<level;i++){
-                sb.append(' ');
-            }
-            String prefix = sb.toString();
-            DFile file = (DFile) item;
-            System.out.println(prefix + file.getName());
-            for(DVersion verze : file.getVersionList()){
-                System.out.println(prefix + " |" + verze.getAddedDate().toString());
-                if(!verze.isScriptForm()){
-                    for (DBlock db : verze.getBlocks()){
-                        System.out.println(prefix + " |" + "---> " + db.getHexHash());
+            if(item==null){
+                for(DItem it : fileMap.values()){
+                    printContents(it, level+1, verbose, out, messages);
+                }
+            } else if (item.isDir()){
+                StringBuilder sb = new StringBuilder();
+                for(int i = 0;i<level;i++){
+                    sb.append(' ');
+                }
+                String prefix = sb.toString();
+                DDirectory dir = (DDirectory) item;
+                out.println(prefix + dir.getName());            
+                for(DItem it : ((DDirectory)item).getItemMap().values()){
+                    printContents(it, level+1, verbose, out, messages);
+                }
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for(int i = 0;i<level;i++){
+                    sb.append(' ');
+                }
+                String prefix = sb.toString();
+                DFile file = (DFile) item;
+                out.println(prefix + file.getName());
+                int i = 0;
+                for(DVersion verze : file.getVersionList()){
+                    out.println(prefix + " |" + messages.getString("version") + " " + i++ + "|" + verze.getAddedDate().toString());
+                    if (verbose){
+                        if(!verze.isScriptForm()){
+                            for (DBlock db : verze.getBlocks()){
+                                out.println(prefix + " |" + "---> " + db.getHexHash());
+                            }
+                        } else {
+                            out.println(prefix + " |" + "---> " + messages.getString("edit_script"));
+                        }
                     }
-                } else {
-                    System.out.println(prefix + " |" + "---> editacni skript");
                 }
             }
+            if(verbose && (level==0)){
+                out.println("-----------------");
+                for(DBlock blok : blockMap.values()){
+                    out.println(blok.getHexHash() + " : refcount=" + blok.getRefCount());
+                }
+            }    
         }
-        if(level==0){
-            System.out.println("-----------------");
-            for(DBlock blok : blockMap.values()){
-                System.out.println(blok.getHexHash() + " : refcount=" + blok.getRefCount());
-            }
-        }        
-    }    
+    }        
 
     @Override
     public void writeExternal(ObjectOutput out) throws IOException {
@@ -340,11 +390,11 @@ public final class Database implements Externalizable{
                 out.writeObject(entry.getValue());
             }
         }
-        if (fileList == null){
+        if (regularFiles == null){
             out.writeInt(0);
         } else {
-            out.writeInt(fileList.size());
-            for (DFile df : fileList){
+            out.writeInt(regularFiles.size());
+            for (DFile df : regularFiles){
                 out.writeObject(df);
             }
         }
@@ -392,7 +442,7 @@ public final class Database implements Externalizable{
         int file_list_size = in.readInt();        
         for (int i = 0; i< file_list_size; i++){
             DFile df = (DFile) in.readObject();
-            fileList.add(df);
+            regularFiles.add(df);
         }        
         int block_set_size = in.readInt();
         blockSet = new TreeSet<>();
@@ -408,56 +458,66 @@ public final class Database implements Externalizable{
         }
     }
     
+    static Serializer<Database> getSerializer(){
+        return new DatabaseSerializer();
+    }
+    
     private static class DatabaseSerializer extends Serializer<Database> {
 
         @Override
         public void write(Kryo kryo, Output output, Database t) {
-            output.writeInt(t.scriptLimit);
-            if (t.blockMap == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.blockMap.size());
-                for (Entry<String,DBlock> entry : t.blockMap.entrySet()){
-                    output.writeString(entry.getKey());
-                    kryo.writeObject(output, entry.getValue(), DBlock.getSerializer());
+            synchronized(t.lockObject){
+                output.writeInt(t.scriptLimit);
+                if (t.blockMap == null){
+                    output.writeInt(0);
+                } else {
+                    output.writeInt(t.blockMap.size());
+                    for (Entry<String,DBlock> entry : t.blockMap.entrySet()){
+                        output.writeString(entry.getKey());
+                        kryo.writeObject(output, entry.getValue(), DBlock.getSerializer());
+                    }
                 }
-            }
-            if (t.blockSet == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.blockSet.size());
-                for (Long l : t.blockSet){
-                    output.writeLong(l);
+                kryo.reset();
+                if (t.blockSet == null){
+                    output.writeInt(0);
+                } else {
+                    output.writeInt(t.blockSet.size());
+                    for (Long l : t.blockSet){
+                        output.writeLong(l);
+                    }
                 }
-            }
-            if (t.blockSet2 == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.blockSet2.size());
-                for (String s : t.blockSet2){
-                    output.writeString(s);
+                kryo.reset();
+                if (t.blockSet2 == null){
+                    output.writeInt(0);
+                } else {
+                    output.writeInt(t.blockSet2.size());
+                    for (String s : t.blockSet2){
+                        output.writeString(s);
+                    }
                 }
-            }
-            if (t.fileList == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.fileList.size());
-                for (DFile df : t.fileList){
-                    kryo.writeObject(output, df, DFile.getSerializer());
+                kryo.reset();
+                if (t.regularFiles == null){
+                    output.writeInt(0);
+                } else {
+                    output.writeInt(t.regularFiles.size());
+                    for (DFile df : t.regularFiles){
+                        kryo.writeObject(output, df, DFile.getSerializer());
+                    }
                 }
-            }
-            if (t.fileMap == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.fileMap.size());
-                for (Entry<String,DItem> entry : t.fileMap.entrySet()){
-                    output.writeString(entry.getKey());
-                    boolean isDir = entry.getValue().isDir();
-                    output.writeBoolean(isDir);
-                    if (isDir){
-                        kryo.writeObject(output, entry.getValue(), DDirectory.getSerializer());
-                    } else {
-                        kryo.writeObject(output, entry.getValue(), DFile.getSerializer());
+                kryo.reset();
+                if (t.fileMap == null){
+                    output.writeInt(0);
+                } else {
+                    output.writeInt(t.fileMap.size());
+                    for (Entry<String,DItem> entry : t.fileMap.entrySet()){
+                        output.writeString(entry.getKey());
+                        boolean isDir = entry.getValue().isDir();
+                        output.writeBoolean(isDir);
+                        if (isDir){
+                            kryo.writeObject(output, (DDirectory) entry.getValue(), DDirectory.getSerializer());
+                        } else {
+                            kryo.writeObject(output, (DFile) entry.getValue(), DFile.getSerializer());
+                        }
                     }
                 }
             }
@@ -474,21 +534,25 @@ public final class Database implements Externalizable{
                 DBlock val = kryo.readObject(input, DBlock.class, DBlock.getSerializer());
                 res.blockMap.put(key, val);
             }
+            kryo.reset();
             int blockSetSize = input.readInt();
             res.blockSet = new TreeSet<>();
             for (int i = 0; i<blockSetSize; i++){
                 res.blockSet.add(input.readLong());
             }
+            kryo.reset();
             int blockSet2Size = input.readInt();
             res.blockSet2 = new TreeSet<>();
             for (int i = 0; i<blockSet2Size; i++){
                 res.blockSet2.add(input.readString());
             }
+            kryo.reset();
             int fileListSize = input.readInt();
-            res.fileList = new ArrayList<>();
+            res.regularFiles = new ArrayList<>();
             for (int i = 0; i< fileListSize; i++){
-                res.fileList.add(kryo.readObject(input, DFile.class, DFile.getSerializer()));
+                res.regularFiles.add(kryo.readObject(input, DFile.class, DFile.getSerializer()));
             }
+            kryo.reset();
             int fileMapSize = input.readInt();
             res.fileMap = new HashMap<>();
             for (int i = 0; i<fileMapSize; i++){
@@ -508,15 +572,22 @@ public final class Database implements Externalizable{
     }
     
     LightDatabase getLightDatabase(){
-        return new LightDatabase(blockSet, blockSet2);
+        synchronized (lockObject){
+            return new LightDatabase(blockSet, blockSet2);
+        }
     }
    
 }
 
-class LightDatabase implements Externalizable{
-    private TreeSet<Long> primaryHashes;
+/**
+ * A reduced version of the Database, contains only hash values of all the blocks.
+ * Used mainly in the window-loop phase of adding new files on the client-side.
+ * @author filipekt
+ */
+class LightDatabase {
+    private final TreeSet<Long> primaryHashes;
     
-    private TreeSet<String> secondaryHashes;
+    private final TreeSet<String> secondaryHashes;
     
     boolean blockExists1(long hash){
         return primaryHashes.contains(hash);
@@ -526,46 +597,10 @@ class LightDatabase implements Externalizable{
         return secondaryHashes.contains(hash);
     }
 
-    public LightDatabase(TreeSet<Long> primaryHashes, TreeSet<String> secondaryHashes) {
+    public LightDatabase(final TreeSet<Long> primaryHashes, final TreeSet<String> secondaryHashes) {
         this.primaryHashes = primaryHashes;
         this.secondaryHashes = secondaryHashes;
     }        
-
-    @Override
-    public void writeExternal(ObjectOutput oo) throws IOException {
-        if (primaryHashes == null){
-            oo.writeInt(0);
-        } else {
-            oo.writeInt(primaryHashes.size());
-            for (long l : primaryHashes){
-                oo.writeLong(l);
-            }
-        }
-        if (secondaryHashes == null){
-            oo.writeInt(0);
-        } else {
-            oo.writeInt(secondaryHashes.size());
-            for (String s : secondaryHashes){
-                oo.writeUTF(s);
-            }
-        }
-    }
-
-    @Override
-    public void readExternal(ObjectInput oi) throws IOException, ClassNotFoundException {
-        int size1 = oi.readInt();
-        primaryHashes = new TreeSet<>();
-        for (int i = 0; i<size1; i++){
-            long val = oi.readLong();
-            primaryHashes.add(val);
-        }
-        int size2 = oi.readInt();
-        secondaryHashes = new TreeSet<>();
-        for (int i = 0; i<size2; i++){
-            String val = oi.readUTF();
-            secondaryHashes.add(val);
-        }
-    }
     
     static Serializer<LightDatabase> getSerializer(){
         return new LightDatabaseSerializer();
@@ -615,20 +650,6 @@ class LightDatabase implements Externalizable{
 
 class TooFewVersions extends Exception {}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /**
  * Representation of a file for the use by Database
  * @author Lifpa
@@ -644,7 +665,7 @@ class DFile implements DItem{
      */
     private String name;
 
-    public void setName(String name) {
+    void setName(String name) {
         this.name = name;
     }
     
@@ -658,7 +679,7 @@ class DFile implements DItem{
      */
     private List<DVersion> versionList;
 
-    public List<DVersion> getVersionList() {
+    List<DVersion> getVersionList() {
         return versionList;
     }
     
@@ -676,7 +697,7 @@ class DFile implements DItem{
      * Return the future number of consecutive scripts, in case a new version is saved as a script
      * @return 
      */
-    int futureNoOfConsecutiveScripts(){
+    int consecutiveScripts(){
         int count = 1;
         for(int i = versionList.size()-1; i>=0; i--){
             if (!versionList.get(i).isScriptForm()) {
@@ -696,7 +717,7 @@ class DFile implements DItem{
         return getLatestNonScript(versionList.size() - 1);
     }
     
-    DVersion getLatestNonScript(int start){
+    private DVersion getLatestNonScript(int start){
         for(int i = start; i>=0; i--){
             if (!versionList.get(i).isScriptForm()) {
                 return versionList.get(i);
@@ -706,11 +727,11 @@ class DFile implements DItem{
     }
     
     /**
-     * Returns true if and only if there exists a version of this file which is not saved as a script
+     * Returns true if and only if there exists a version of this file which is not saved as a script.
      * @return 
      */
-    boolean nonScriptExists(){
-        return getLatestNonScript()!=null;
+    boolean blockVersionExists(){
+        return (getVersionList() != null) && !getVersionList().isEmpty();
     }
     
     /**
@@ -757,7 +778,6 @@ class DFile implements DItem{
         public void write(Kryo kryo, Output output, DFile t) {
             output.writeString(t.name);
             output.writeInt(t.versionList.size());
-            output.flush();
             for (DVersion dv : t.versionList){
                 kryo.writeObject(output, dv, DVersion.getSerializer());
             }
@@ -779,10 +799,6 @@ class DFile implements DItem{
     }
 }
 
-
-
-
-
 /**
  * Representation of a version of a file for the use by Database, DFile
  * @author Lifpa
@@ -798,11 +814,11 @@ class DVersion implements Externalizable{
      */
     private List<DBlock> blocks;
 
-    public void setBlocks(List<DBlock> blocks) {
+    void setBlocks(List<DBlock> blocks) {
         this.blocks = blocks;
     }
 
-    public List<DBlock> getBlocks() {
+    List<DBlock> getBlocks() {
         return blocks;
     }
     
@@ -811,26 +827,28 @@ class DVersion implements Externalizable{
      */
     private Date addedDate;        
     
-    public Date getAddedDate() {
+    Date getAddedDate() {
         return addedDate;
     }    
     
     /**
      * Is this version represented as a script?
+     * If not, it is assumed, that the version is stored in blocks of data.
      */
     private boolean scriptForm;
 
-    public void setScriptForm(boolean scriptForm) {
+    void setScriptForm(boolean scriptForm) {
         this.scriptForm = scriptForm;
     }
     
-    public boolean isScriptForm() {
+    boolean isScriptForm() {
         return scriptForm;
     }    
     
+    
     private String fileName;
     
-    public String getFileName() {
+    String getFileName() {
         return fileName;
     }    
     
@@ -839,7 +857,7 @@ class DVersion implements Externalizable{
      */
     private int blockSize;
     
-    public int getBlockSize() {
+    int getBlockSize() {
         return blockSize;
     }    
     
@@ -874,14 +892,11 @@ class DVersion implements Externalizable{
         return addedDate + (scriptForm ? " : scripted" : "");
     }
     
-    private DVersion(List<DBlock> blocks, Date added, int block_size){
-        this.blocks = blocks;
-        this.addedDate = added;
-        scriptForm = false;
-        this.blockSize = block_size;
-    }
     DVersion(List<DBlock> blocks, int block_size, String fileName){
-        this(blocks,new Date(),block_size);
+        this.blocks = blocks;
+        this.addedDate = new Date();
+        this.scriptForm = false;
+        this.blockSize = block_size;                        
         this.fileName = fileName;
     }    
     public DVersion(){}
@@ -975,16 +990,6 @@ class DVersion implements Externalizable{
     }
 }
 
-
-
-
-
-
-
-
-
-
-
 /**
  * Representation of a block for the use by Database and others
  * @author Lifpa
@@ -1008,7 +1013,8 @@ class DBlock implements Externalizable{
         return Long.toHexString(hash);
     }
     
-    @Override public boolean equals(Object o){
+    @Override 
+    public boolean equals(Object o){
         if (o instanceof DBlock){
             DBlock t = (DBlock)o;
             return  ((hash == t.hash) || hash2.equals(t.hash2) || (size == t.size));
@@ -1059,26 +1065,24 @@ class DBlock implements Externalizable{
     }
     
     /**
-     * The position in the hash collision list (the list can have holes in it)
+     * The position in the hash collision list (the list can have holes in it, however)
      */
     private int col = 0;
 
-    public int getCol() {
+    int getCol() {
         return col;
     }
 
-    public void setCol(int col) {
+    void setCol(int col) {
         this.col = col;
     }
-    
-    
-    
+           
     /**
      * The safe hash value for this block
      */
     private String hash2;
 
-    public String getHash2() {
+    String getHash2() {
         return hash2;
     }
     
@@ -1087,7 +1091,7 @@ class DBlock implements Externalizable{
      */
     private int size;    
 
-    public int getSize() {
+    int getSize() {
         return size;
     }
     
@@ -1096,7 +1100,7 @@ class DBlock implements Externalizable{
      */
     private int used;
     
-    public int getUsed() {
+    int getUsed() {
         return used;
     }    
     
@@ -1105,15 +1109,15 @@ class DBlock implements Externalizable{
      */
     private int refCount = 0;
 
-    public int getRefCount() {
+    int getRefCount() {
         return refCount;
     }
 
-    public void incrementRefCount(){
+    void incrementRefCount(){
         refCount++;
     }
     
-    public void decrementRefCount(){
+    void decrementRefCount(){
         refCount--;
     }
 
@@ -1181,11 +1185,6 @@ interface DItem extends Externalizable{
     String getName();
 }
 
-
-
-
-
-
 /**
  * Representation of a directory for the use by Database and others
  * @author Lifpa
@@ -1211,7 +1210,7 @@ class DDirectory implements DItem {
      */
     private Map<String,DItem> itemMap;
 
-    public Map<String, DItem> getItemMap() {
+    Map<String, DItem> getItemMap() {
         return itemMap;
     }
     
@@ -1221,13 +1220,10 @@ class DDirectory implements DItem {
     }
 
     DDirectory(String name) {
-        this(name, new HashMap<String,DItem>());
+        this.name = name;
+        this.itemMap = new HashMap<>();
     }
     
-    DDirectory(String name, Map<String,DItem> items){
-        this.name = name;
-        this.itemMap = items;
-    }
     public DDirectory(){}
 
     @Override
@@ -1268,7 +1264,7 @@ class DDirectory implements DItem {
         @Override
         public void write(Kryo kryo, Output output, DDirectory t) {
             output.writeString(t.name);
-            output.writeInt(t.itemMap.size(), true);
+            output.writeInt(t.itemMap.size());
             for(Map.Entry<String,DItem> entry : t.itemMap.entrySet()){
                 output.writeString(entry.getKey()); 
                 boolean isDir = entry.getValue().isDir();
@@ -1287,7 +1283,7 @@ class DDirectory implements DItem {
             DDirectory res = new DDirectory();
             Map<String,DItem> map = new HashMap<>();
             res.name = input.readString();
-            int length = input.readInt(true);
+            int length = input.readInt();
             for (int i = 0; i<length; i++){
                 String name = input.readString();
                 boolean isDir = input.readBoolean();

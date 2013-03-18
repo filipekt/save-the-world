@@ -9,12 +9,12 @@ public enum Requests {
     /**
      * Client requests a valid instance of Database to be delivered.
      */
-    GET_LIST, 
+    GET_DB, 
     
     /**
      * Client requests a lightweight version of the server's database.
      */
-    GET_LIGHT_DATABASE,
+    GET_LIGHT_DB,
     
     /**
      * Client wants to know whether an item is present on the server.
@@ -36,7 +36,10 @@ public enum Requests {
      */
     CREAT_DIR,
     
-    DEL_FILE, DEL_VERS, 
+    /**
+     * Client requests to delete a version of a file, unless it the last remaining version.
+     */
+    DEL_VERS, 
     
     /**
      * Client requests a certain file to be delivered

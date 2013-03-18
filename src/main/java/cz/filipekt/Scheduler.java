@@ -2,129 +2,166 @@ package cz.filipekt;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.file.FileSystems;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import static java.nio.file.StandardWatchEventKinds.*;
-import java.nio.file.WatchEvent;
-import java.nio.file.WatchKey;
-import java.nio.file.WatchService;
-import java.util.Calendar;
-import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.ResourceBundle;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /** 
- *  Class designed for automatic checking of directories and files
+ *  Deals with automatization of operations.
  * @author Lifpa
  */
-public class Scheduler {
-    public static void main(final String[] args) throws InterruptedException{
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        Path path = null;
-        String target = null;
-        int time = Integer.MAX_VALUE;
-        boolean ok = false;
-        while(!ok){
-            System.out.println("Please enter a path:");
-            try {
-                path = Paths.get(br.readLine());
-                if (Files.exists(path)) {
-                    ok = true;
-                } else {
-                    System.out.println("Sorry, the path does not exist.");
-                }
-            } catch (IOException ex) {
-                Logger.getLogger(Scheduler.class.getName()).log(Level.SEVERE, null, ex);
+public class Scheduler {    
+    public static void main(String[] args){
+        Locale locale = new Locale("en","US");
+        String localeArgs = ServerUtils.getArgVal(args, "locale", false);
+        if (localeArgs!=null){
+            if (localeArgs.equalsIgnoreCase("cz")){
+                locale = new Locale("cs","CZ");    
             }
         }
-        ok = false;
+        ResourceBundle messages = ResourceBundle.getBundle("cz.filipekt.WorldBundle", locale); 
         
-        while(!ok){
-            System.out.println("Please enter a path on the server:");
-            try {
-                target = br.readLine();
-                ok = true;
-            } catch (IOException ex) {
-                System.out.println("Sorry, the path cannot be used.");
-            }
-        }        
-        ok = false;
+        String uri = ServerUtils.getArgVal(args, "c", false);
+        String port = ServerUtils.getArgVal(args, "p", false);
+        String time = ServerUtils.getArgVal(args, "time", false);        
+        String input = ServerUtils.getArgVal(args, "input", true);
+        String count = ServerUtils.getArgVal(args, "count", false);
         
-        while(!ok){
-            System.out.println("Please enter the time interval of checking (in seconds):");
-            try{
-                time = Integer.parseInt(br.readLine());
-                ok = true;
-            } catch(IOException | NumberFormatException ex){
-                System.out.println("Sorry, you have to enter a positive integer.");
+        Path input2 = Paths.get(input);
+        if ((uri==null) || uri.isEmpty() || (port==null) || port.isEmpty() ||
+                (time==null) || time.isEmpty() || (input==null) || input.isEmpty() || Files.notExists(input2)){
+            System.out.println(messages.getString("usage_scheduler"));
+            return;
+        }
+        int port2, time2;
+        long count2 = 0;        
+        if ((count!=null) && !count.isEmpty()){
+            if (ServerUtils.isLong(count)){
+                count2 = Long.parseLong(count);
             }
         }
         
-        Scheduler pl = new Scheduler(time, path, target);
         try {
-            pl.work();
-        } catch (IOException ex) {
-            Logger.getLogger(Scheduler.class.getName()).log(Level.SEVERE, null, ex);
+            port2 = Integer.parseInt(port);
+            time2 = Integer.parseInt(time);
+        } catch (NumberFormatException ex){
+            System.out.println(messages.getString("usage_scheduler"));
+            return;
         }
-    }        
+        try {
+            Scheduler scheduler = new Scheduler(uri, port2, time2, input2, locale, messages, count2);
+            scheduler.loadCommands();
+            scheduler.work();
+        } catch (Exception ex){
+            System.out.println(messages.getString("commands_not_loaded"));
+        }
+    }
 
-    Scheduler(int time, Path path, String target) {
+    private Scheduler(String uri, int port, int time, Path input, Locale locale, ResourceBundle messages, long count) {
+        this.uri = uri;
+        this.port = port;
         this.time = time;
-        this.path = path;
-        this.target = target;
-    }            
-
-    /**     
-     * Target path on the server, where the reqgularly checked "path" is backed up
-     */
-    String target;
+        this.input = input;
+        this.locale = locale;
+        this.messages = messages;
+        this.commands = new HashSet<>();
+        this.count = count;
+    }
     
-    void work() throws IOException, InterruptedException{
-        doUpdate();
-        WatchService watcher = FileSystems.getDefault().newWatchService();
-        WatchKey key;
-        path.register(watcher, ENTRY_CREATE, ENTRY_DELETE, ENTRY_MODIFY);
-        while(true){
-            key = watcher.poll((long)time, TimeUnit.SECONDS);
-            if(key==null){
-                System.out.println(Calendar.getInstance().getTime() + " : no changes spotted, no update has been done");
-            } else {
-                for(WatchEvent<?> event : key.pollEvents()){
-                    if(event.kind() == ENTRY_MODIFY){
-                        doUpdate();
-                        System.out.println(Calendar.getInstance().getTime() + " : updated");
+    /**
+     * URI of the server to which this schduler connects to.
+     */
+    private String uri;
+    
+    /**
+     * Port number used on the server referred to by "uri" variable
+     */
+    private int port;
+    
+    /**
+     * Time interval (in seconds), for which at most the scheduler waits before 
+     * executing the scheduled code.
+     */
+    private int time;
+    
+    /**
+     * Number of executions of the scheduled code before the program shuts down.
+     */
+    private long count;
+    
+    /**
+     * Path to the source file containing instructions that should be periodically
+     * executed by this scheduler.
+     */
+    private Path input;
+    
+    /**
+     * The current locale.
+     */
+    private Locale locale;
+    
+    /**
+     * The current ResourceBundle used mainly for retrieving short descriptive texts.
+     */
+    private ResourceBundle messages;
+    
+    /**
+     * Conatins all the scheduled commands parsed by whitespace
+     */
+    private Collection<List<String>> commands;
+    
+    /**
+     * Connects to the server and executes the scheduled code.
+     * @throws IOException 
+     */
+    private void executeCode() throws IOException{
+        Client client = new Client(uri, port, null, locale, System.out, false);
+        for (List<String> command : commands){
+            client.switchToOperation(command);
+        }
+        client.terminateConnection();
+        client.end();
+    }
+    
+    /**
+     * Loads and parses the scheduled commands from the source file "input".
+     */
+    private void loadCommands() throws IOException{
+        try (BufferedReader br = Files.newBufferedReader(input, Charset.defaultCharset())){
+            String line;
+            while ((line=br.readLine())!=null){
+                String[] split1 = line.split(" ");
+                List<String> split2 = new ArrayList<>();
+                for (String s : split1){
+                    if ((s!=null) && !s.isEmpty()){
+                        split2.add(s);
                     }
                 }
-                key.reset();
-            }            
+                commands.add(split2);
+            }        
         }
     }
     
     /**
-     * Carries out an "add" request
-     */
-    private void doUpdate(){
-       String[] args = new String[7];
-       args[0] = "add";
-       args[1] = path.toAbsolutePath().toString();
-       args[2] = target;
-       args[3] = "-p";
-       args[4] = Integer.toString(6666);
-       args[5] = "-c";
-       args[6] = "localhost";
-       Client.main(args);
-    }        
-    
-    /**
-     * Time interval of checking for changes in "path". In seconds.
-     */
-    int time;
-    
-    /**
-     * The path monitored for changes
-     */
-    Path path;    
+     * The main loop executing the scheduled code in the specified intervals.
+     */   
+    private void work(){
+        for (long L = 0; (L < count) || (count==0); L++){
+            try {
+                Thread.sleep(time * 1000L);
+                executeCode();
+            } catch (InterruptedException | IOException ex) {
+                Logger.getLogger(Scheduler.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
+    }    
 }

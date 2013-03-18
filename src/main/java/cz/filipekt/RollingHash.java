@@ -182,12 +182,12 @@ public class RollingHash{
      */
     private class RoundArray {        
 
-        public RoundArray(final int length) {
+        RoundArray(final int length) {
             this.length = length;        
             data = new byte[length];        
         }
 
-        public void addLast(byte b){
+        void addLast(byte b){
             data[right] = b;
             right++;        
             if (right >= length){
@@ -195,11 +195,11 @@ public class RollingHash{
             }
         }
 
-        public byte getFirst(){
+        byte getFirst(){
             return data[left];
         }
 
-        public byte removeFirst(){
+        byte removeFirst(){
             byte val = data[left];
             left++;
             return val;
@@ -214,7 +214,7 @@ public class RollingHash{
             left = 0;
         }        
 
-        public byte[] asArray(){
+        byte[] asArray(){
             return Arrays.copyOfRange(data, left, right);
         }
 

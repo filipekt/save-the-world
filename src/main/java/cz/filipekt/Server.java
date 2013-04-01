@@ -90,7 +90,7 @@ public final class Server {
                 try {
                     Files.createDirectories(p);
                 } catch (Exception ex){
-                    System.err.println("Invalid home directory specified.");
+                    System.err.println(messages.getString("invalid_homedir"));
                     return;                    
                 }             
             } else {
@@ -104,12 +104,12 @@ public final class Server {
                     }
                 }                
             }
-            Server server = new Server(portNum, br, homeDir, args, locale, messages);
+            Server server = new Server(portNum, br, homeDir, args, messages);
             long grantedSpace = server.getReservedSpace();
-            if (grantedSpace == Long.MAX_VALUE){
-                System.out.println("Granted space: unlimited");
+            if (grantedSpace == 0L){
+                System.out.println(messages.getString("granted_space") + " " + messages.getString("unlimited"));
             } else {
-                System.out.println("Granted space: " + server.getReservedSpace() + " bytes");            
+                System.out.println(messages.getString("granted_space") + " " + server.getReservedSpace() + " " + "B");            
             }
             server.start();            
         }                        
@@ -118,12 +118,7 @@ public final class Server {
     /**
      * Contains all the localized messages that are shown to the user.
      */
-    private final ResourceBundle messages;    
-    
-    /**
-     * The valid locale
-     */
-    private final Locale locale;      
+    private final ResourceBundle messages;               
     
     /**
      * Standard input
@@ -161,7 +156,7 @@ public final class Server {
     private final long spaceNotUsed;
     
     private Server(int port, BufferedReader stdin, String homeDir, String[] args, 
-            Locale locale, ResourceBundle messages) throws IOException, ClassNotFoundException{
+            ResourceBundle messages) throws IOException, ClassNotFoundException{
         this.listening_port = port;
         this.stdin = stdin;        
         if (homeDir == null) {
@@ -175,7 +170,6 @@ public final class Server {
         scripts = loadScripts();
         reservedSpace = computeReservedSpace(args);
         zipBuffer = new ByteArrayOutputStream();
-        this.locale = locale;
         this.messages = messages;
         this.threadPool = java.util.concurrent.Executors.newCachedThreadPool();
     }    
@@ -202,7 +196,7 @@ public final class Server {
      */
     private void start() {
         try(final ServerSocket server_socket = new ServerSocket(listening_port)) {
-            System.out.println("Accepting a connection on port " + listening_port + " ...");
+            System.out.println(messages.getString("accepting_on_port") + " " + listening_port + " ...");
             while(true){
                 final Socket socket = server_socket.accept();
                 if (socket != null){
@@ -210,12 +204,12 @@ public final class Server {
                         @Override
                         public void run() {                                                        
                             try {                                
-                                System.out.println("Connection accepted with " + socket.getInetAddress().getHostAddress());                    
+                                System.out.println(messages.getString("conn_acc_with") + " " + socket.getInetAddress().getHostAddress());                    
                                 serveClient(socket);
                                 saveState();
-                                System.out.println("Connection terminated with " + socket.getInetAddress().getHostAddress());
+                                System.out.println(messages.getString("conn_term_with") + " " + socket.getInetAddress().getHostAddress());
                             } catch (IOException | NoSuchAlgorithmException ex){
-                                System.err.println("The client at " + socket.getInetAddress().getHostAddress() + " could not be served.");                                
+                                System.err.println(messages.getString("client_at") + " "  + socket.getInetAddress().getHostAddress() + " " + messages.getString("couldnt_be_served"));                                
                             } finally {                                
                                 try {
                                     socket.close();
@@ -229,7 +223,7 @@ public final class Server {
             }
         } catch (IOException ex) {                            
 //                Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
-            System.err.println("Server socket not acquired: " + ex.getLocalizedMessage());
+            System.err.println(messages.getString("socket_not_ack") + " " + ex.getLocalizedMessage());
         }                            
     }
     
@@ -559,12 +553,12 @@ public final class Server {
      */
     private void collect_blocks() throws IOException{
         synchronized (lockObject) {
-            System.out.println("Before GC: " + getAvailableSpace() + "B available");        
+            System.out.println(messages.getString("before_gc") + " " + getAvailableSpace() + messages.getString("b_available"));        
             for (DBlock block : db.collectBlocks()){
                 String name = block.getName();
                 ServerUtils.deleteBlock(name, home_dir);
             }
-            System.out.println("After GC: " + getAvailableSpace() + "B available");
+            System.out.println(messages.getString("after_gc") + " " + getAvailableSpace() + messages.getString("b_available"));
         }
     }
     
@@ -668,14 +662,14 @@ public final class Server {
     private String getDir() throws IOException{
         String addr = null;
         while(true){
-            System.out.println("Where do you want to save the program data?");
+            System.out.println(messages.getString("where_index"));
             addr = stdin.readLine();                    
             Path path = Paths.get(addr);                
             try{
                 Files.createDirectories(path);
                 break;
             } catch (FileAlreadyExistsException | SecurityException ex){
-                System.err.println("Sorry, the directory can not be used.");
+                System.err.println(messages.getString("dir_cant_be_used"));
             }
         }            
         return addr;
@@ -777,15 +771,16 @@ public final class Server {
                     return ServerUtils.loadVersionFromDisc(verze, home_dir);
                 }
             } catch (PatchFailedException | IOException | BlockNotFound ex){
-                System.err.println("\"Get\" request could not be served.");
+                System.err.println("\"Get\" " + messages.getString("request_failed"));
                 return null;
             }
         }
     } 
     
     /**
-     * Returns the number of bytes avaliable on disc for the application.
-     * @param args
+     * Returns the number of bytes on disc reserved for the application, or zero if
+     * there is no reservation.
+     * @param args Program arguments, as source of reservation information.
      * @return
      * @throws IOException 
      */
@@ -793,15 +788,12 @@ public final class Server {
         String val = ServerUtils.getArgVal(args, "space", false);
         if (ServerUtils.isLong(val)){
             long desired = Long.parseLong(val);
-            long available = FileSystems.getDefault().provider().getFileStore(Paths.get(home_dir)).getUsableSpace();
+            long available = Files.getFileStore(Paths.get(home_dir)).getUsableSpace();
             return (desired<available) ? desired : available;
         } else {                 
-//            return FileSystems.getDefault().provider().getFileStore(Paths.get(home_dir)).getUsableSpace() / AVAILABLE_SPACE_FACTOR;
             return 0L;
         }
-    }
-    
-    private static final long AVAILABLE_SPACE_FACTOR = 5;       
+    }       
     
     /**
      * Transforms DVersion "actualVersion" into standard form - representation by blocks, <br/>

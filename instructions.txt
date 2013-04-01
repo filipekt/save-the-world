@@ -17,7 +17,7 @@
 --------------------Example Usage--------------------
 
 	==> To start server (on port no.6666) <==
-java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.Server -home "./databaseDirecotry" -p 6666
+java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.Server -home "./databaseDirecotry" -p 6666 -locale EN
 
 	==> To start graphical client <==
 java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.GUIClient

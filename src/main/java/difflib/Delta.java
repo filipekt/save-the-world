@@ -24,8 +24,8 @@ import java.util.*;
  * @author <a href="dm.naumenko@gmail.com">Dmitry Naumenko</a>
  */
 public abstract class Delta implements Serializable{
-    private Chunk original;
-    private Chunk revised;
+    protected Chunk original;
+    protected Chunk revised;
     
     public enum TYPE {
         CHANGE, DELETE, INSERT
@@ -41,6 +41,7 @@ public abstract class Delta implements Serializable{
         this.original = original;
         this.revised = revised;
     }
+    
     
     /**
      * Verifies that this delta can be used to patch the given text.

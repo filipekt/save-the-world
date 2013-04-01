@@ -1,8 +1,11 @@
 package cz.filipekt;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.io.Output;
 import difflib.Patch;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -10,26 +13,38 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  *
  * @author Lifpa
  */
-public class ServerUtils {    
-    
+public class ServerUtils {        
     
     /**
-     * Encodes the input array of bytes into a String
+     * Encodes the input array of bytes into a String.
+     * Each byte is encapsulated into a single character of the resulting String.
      * @param data
      * @return 
      */
-    static String byteToString(byte[] data){
+    private static String byteToString(byte[] data){
+//        StringBuilder sb = new StringBuilder();
+//        if(data!=null){
+//            for (int i = 0; i<data.length; i++){            
+//                int c = 0;
+//                c |= ((data[i++] << 8) & 0xFF00);
+//                if (i < data.length){
+//                    c |=  (data[i] & 0xFF);
+//                }
+//                sb.append((char)c);
+//            }
+//        }
+//        return sb.toString();
+        
         StringBuilder sb = new StringBuilder();
         if(data!=null){
             for(Byte b : data){
@@ -37,6 +52,63 @@ public class ServerUtils {
             }
         }
         return sb.toString();
+    }
+    
+    /**
+     * Encodes a byte array into a list of Strings.
+     * The array is parsed into 128-byte loong subarrays, and these are processed
+     * through the byteToString(..) conversion method.
+     * @param data
+     * @return 
+     */
+    static List<String> byteToStringList(byte[] data){
+        final int length = 128;
+        int from = 0;
+        int to;        
+        byte[] data2;
+        List<String> res = new ArrayList<>();
+        while (from < data.length){
+            to = ((from+length) > data.length) ? data.length : (from + length);
+            data2 = Arrays.copyOfRange(data, from, to);
+            res.add(ServerUtils.byteToString(data2));
+            from += length;
+        }
+        return res;
+    }
+    
+    /**
+     * 
+     * @param data
+     * @param evenByteCount
+     * @return 
+     */
+    static byte[] stringListToByte(List<String> data, boolean evenByteCount){
+        StringBuilder sb = new StringBuilder();
+        for (String s : data){
+            sb.append(s);
+        }
+        String src = sb.toString();
+        return ServerUtils.stringToByte(src, evenByteCount);
+    }
+    
+    /**
+     * Checks whether the difference script size is smaller than a specified limit.
+     * @param patch
+     * @param limit
+     * @return 
+     */
+    static boolean checkSize(Patch patch, long limit){
+        try (ByteArrayOutputStream os = new ByteArrayOutputStream(); Output kryo_out = new Output(os)){
+            Kryo kryo = new Kryo();
+            kryo.writeObject(kryo_out, patch);
+            kryo_out.flush();
+            int size = os.size();
+//            System.out.println("size: " + size);
+//            System.out.println("limit: " + limit);
+            return size < limit;
+        } catch (IOException ex){
+            return false;
+        }                        
     }
     
     /**
@@ -140,13 +212,31 @@ public class ServerUtils {
     
     /**
      * Encodes a String into an array of bytes.
-     * The input String object is expected to have been created by the </br>
-     * byteToString(..) method, because it only takes into account the lower </br>
-     * 8 buts of each String character.
-     * @param data
+     * @param data String to be encoded.
+     * @param evenByteCount Marks whether the lower 8 bits of the last character are taken into account.
      * @return 
      */
-    static byte[] stringToByte(String data){           
+    private static byte[] stringToByte(String data, boolean evenByteCount){           
+//        if(data!=null && !data.isEmpty()){
+//            int length = data.length() * 2;
+//            if (!evenByteCount){
+//                length -= 1;
+//            }
+//            byte[] res = new byte[length];
+//            int i = 0;
+//            for (char c : data.toCharArray()){
+//                byte a = (byte) ((c >>> 8) & 0xFF);
+//                byte b = (byte) (c & 0xFF);
+//                res[i++] = a;
+//                if (i < res.length){
+//                    res[i++] = b;
+//                }
+//            }
+//            return res;
+//        } else {
+//            return new byte[0];
+//        }
+        
         if(data!=null && !data.isEmpty()){
             int length = data.length();
             byte[] res = new byte[length];
@@ -162,30 +252,23 @@ public class ServerUtils {
     }          
     
     /**
-     * With respect to the validBytes of file "f" determines the block validBytes, which will be used for storing the f's blocks.
-     * @param f
+     * Determines the optimal block size used for storing a file's contents.
+     * @param fileSize The size of a file.
      * @return 
      */
-    static int getBlockSize(Path f){
-        try {            
-                    long size = Files.size(f);
-                    String hexSize = Long.toHexString(size);
-                    int c = 16;
-                    switch(hexSize.length()){
-                        case 1:
-                        case 2:
-                            return c;
-                        case 3:
-                            return c*16;
-                        case 4:
-                            return c*16*16;
-                        default:
-                            return c*16*16*16;
-                    }
-        } catch (IOException ex) {
-            Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
+    static int getBlockSize(int fileSize){
+        int c = 16;
+        switch(Integer.toHexString(fileSize).length()){
+            case 1:
+            case 2:
+                return c;
+            case 3:
+                return c*16;
+            case 4:
+                return c*16*16;
+            default:
+                return c*16*16*16;
         }
-        return 0;
     }    
     
     /**

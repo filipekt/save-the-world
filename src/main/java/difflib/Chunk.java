@@ -15,7 +15,12 @@
  */
 package difflib;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.Serializer;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -33,6 +38,40 @@ import java.util.List;
  * @author <a href="dm.naumenko@gmail.com>Dmitry Naumenko</a>
  */
 public class Chunk implements Serializable {
+    
+    private static class ChunkSerializer extends Serializer<Chunk>{
+
+        @Override
+        public void write(Kryo kryo, Output output, Chunk t) {
+            output.writeInt(t.position);
+            if (t.lines == null){
+                output.writeInt(0);
+            } else {
+                output.writeInt(t.lines.size());
+                for (Object o : t.lines){
+                    String s = (String)o;
+                    output.writeString(s);
+                }
+            }
+        }
+
+        @Override
+        public Chunk read(Kryo kryo, Input input, Class<Chunk> type) {
+            int pos = input.readInt();
+            int linesCount = input.readInt();
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i<linesCount; i++){
+                String s = input.readString();
+                lines.add(s);
+            }
+            return new Chunk(pos, lines);
+        }
+        
+    }
+    
+    public static Serializer<Chunk> getSerializer(){
+        return new ChunkSerializer();
+    }
 
     private final int position;
     private List<?> lines;

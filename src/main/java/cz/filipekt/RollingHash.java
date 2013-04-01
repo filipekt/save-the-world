@@ -149,10 +149,13 @@ public class RollingHash{
      * @throws NoSuchAlgorithmException 
      */
     public static String computeHash2(byte[] in_data) throws NoSuchAlgorithmException {
-       MessageDigest md = MessageDigest.getInstance("SHA-512");
-       md.update(in_data);         
-       byte[] h = md.digest();
-       return new BigInteger(h).toString(16);       
+        if ((in_data == null) || (in_data.length == 0)){
+            return "";
+        }
+        MessageDigest md = MessageDigest.getInstance("SHA-512");
+        md.update(in_data);         
+        byte[] h = md.digest();
+        return new BigInteger(h).toString(16);       
     }
     
     private String computeHash2(byte[] in_data, int from, int to) throws NoSuchAlgorithmException{

@@ -4,7 +4,6 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.KryoException;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -661,8 +660,7 @@ public class Client {
             } else {
                 kryo.writeObject(kryo_output, Requests.CREAT_FILE);                
                 kryo.writeObject(kryo_output, Files.size(file));
-            }
-            
+            }            
             kryo.writeObject(kryo_output, target.toArray(new String[0]));
             kryo_output.flush();
             boolean enough_space = kryo.readObject(kryo_input, Boolean.TYPE);
@@ -687,27 +685,38 @@ public class Client {
                 }
             }
             return;
-        }                                
-        int vel_bloku = ServerUtils.getBlockSize(file);                     
-
-        kryo.writeObject(kryo_output, Requests.CREAT_VERS);
-        kryo.writeObject(kryo_output, Files.size(file));
-        kryo_output.flush();
-        boolean enough_space = kryo.readObject(kryo_input, Boolean.TYPE);
-        if(!enough_space){
-            if (frame == null){
-                stdout.println(messages.getString("not_enough_space"));
-                throw new IOException();    
-            } else {
-                JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                throw new IOException();
-            }                
+        }                                                
+        byte[] fileContents = Files.readAllBytes(file);        
+        if (fileContents != null){
+            int vel_bloku = ServerUtils.getBlockSize(fileContents.length);
+            kryo.writeObject(kryo_output, Requests.CHECK_CHANGES);
+            kryo.writeObject(kryo_output, target.toArray(new String[0]));                
+            String contentHash = RollingHash.computeHash2(fileContents);
+            kryo.writeObject(kryo_output, contentHash);
+            kryo_output.flush();
+            boolean changed = kryo.readObject(kryo_input, boolean.class);                    
+            if (changed){
+                kryo.writeObject(kryo_output, Requests.CREAT_VERS);
+                kryo.writeObject(kryo_output, fileContents.length);
+                kryo_output.flush();
+                boolean enough_space = kryo.readObject(kryo_input, Boolean.TYPE);
+                if(enough_space){
+                    kryo.writeObject(kryo_output, target.toArray(new String[0]));
+                    kryo.writeObject(kryo_output, (Integer)vel_bloku);
+                    kryo.writeObject(kryo_output, contentHash);
+                    kryo_output.flush();  
+                    windowLoop(fileContents, vel_bloku);                                                                            
+                } else {
+                    if (frame == null){
+                        stdout.println(messages.getString("not_enough_space"));
+                        throw new IOException();    
+                    } else {
+                        JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                        throw new IOException();
+                    }
+                }
+            }
         }
-        kryo.writeObject(kryo_output, target.toArray(new String[0]));
-        kryo.writeObject(kryo_output, (Integer)vel_bloku);
-        kryo_output.flush();  
-        
-        windowLoop(file, vel_bloku);
     }
     
     /**
@@ -720,9 +729,10 @@ public class Client {
      * @throws IOException
      * @throws NoSuchAlgorithmException 
      */
-    private void windowLoop(Path file, int block_size) throws IOException, NoSuchAlgorithmException{
-        LightDatabase ld = getLightDatabase(false);
-        try (BufferedInputStream fin = new BufferedInputStream(Files.newInputStream(file))) {
+    private void windowLoop(byte[] fileContents, int block_size) throws IOException, NoSuchAlgorithmException{
+        LightDatabase ld = getLightDatabase(false);        
+//        try (BufferedInputStream fin = new BufferedInputStream(Files.newInputStream(file))) {          
+        try (ByteArrayInputStream fin = new ByteArrayInputStream(fileContents)){
             RollingHash rh = new RollingHash(block_size);
             for(int i = 0; i<block_size-1; i++){        
                 int c = fin.read();                    

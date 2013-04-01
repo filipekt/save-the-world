@@ -15,6 +15,10 @@
  */
 package difflib;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.Serializer;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
 import java.io.Serializable;
 import java.util.List;
 
@@ -30,6 +34,26 @@ public class DeleteDelta extends Delta implements Serializable{
      */
     public DeleteDelta(Chunk original, Chunk revised) {
         super(original, revised);
+    }
+    
+    private static class DeleteDeltaSerializer extends Serializer<DeleteDelta>{
+
+        @Override
+        public void write(Kryo kryo, Output output, DeleteDelta t) {
+            kryo.writeObject(output, t.original, Chunk.getSerializer());
+            kryo.writeObject(output, t.revised, Chunk.getSerializer());
+        }
+
+        @Override
+        public DeleteDelta read(Kryo kryo, Input input, Class<DeleteDelta> type) {
+            Chunk a = kryo.readObject(input, Chunk.class, Chunk.getSerializer());
+            Chunk b = kryo.readObject(input, Chunk.class, Chunk.getSerializer());       
+            return new DeleteDelta(a, b);
+        }        
+    }
+    
+    public static Serializer<DeleteDelta> getSerializer(){
+        return new DeleteDeltaSerializer();
     }
     
     /**

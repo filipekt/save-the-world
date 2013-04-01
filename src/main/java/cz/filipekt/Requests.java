@@ -32,6 +32,11 @@ public enum Requests {
     CREAT_VERS, 
     
     /**
+     * Client requests the hash value of a file's contents.
+     */
+    CHECK_CHANGES,
+    
+    /**
      * Client requests to create a new directory in the server database
      */
     CREAT_DIR,

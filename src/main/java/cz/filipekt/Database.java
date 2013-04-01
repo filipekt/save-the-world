@@ -735,6 +735,24 @@ class DFile implements DItem{
     }
     
     /**
+     * Returns the latest version of the file.
+     * @return 
+     */
+    DVersion getLatestVersion(){
+        List<DVersion> versions = getVersionList();
+        if (versions != null){
+            int versionCount = versions.size();
+            if (versionCount > 0){
+                return versions.get(versionCount-1);
+            } else {
+                return null;
+            }
+        } else {
+            return null;
+        }        
+    }
+    
+    /**
      * Returns true if and only if this object represents a directory. <br/>
      * Of course, always returns false.
      * @return 
@@ -799,6 +817,8 @@ class DFile implements DItem{
     }
 }
 
+
+
 /**
  * Representation of a version of a file for the use by Database, DFile
  * @author Lifpa
@@ -807,7 +827,7 @@ class DVersion implements Externalizable{
     /**
      * Marks the version of serialized state used. 
      */
-    private static final long serialVersionUID = 2013_02_23L;
+    private static final long serialVersionUID = 2013_03_30L;
     
     /**
      * The list of blocks of this version - if editational==true, then blocks==null
@@ -861,6 +881,24 @@ class DVersion implements Externalizable{
         return blockSize;
     }    
     
+    /**
+     * SHA-512 hash value of the version contents.
+     */
+    private String contentHash;        
+
+    String getContentHash() {
+        return contentHash;
+    }
+    
+    /**
+     * Size of the version data in bytes.
+     */
+    private long size;
+
+    long getSize() {
+        return size;
+    }
+    
     @Override
     public boolean equals(Object o){
         if (o instanceof DVersion){        
@@ -892,12 +930,14 @@ class DVersion implements Externalizable{
         return addedDate + (scriptForm ? " : scripted" : "");
     }
     
-    DVersion(List<DBlock> blocks, int block_size, String fileName){
+    DVersion(List<DBlock> blocks, int block_size, String fileName, String contentHash, long size){
         this.blocks = blocks;
         this.addedDate = new Date();
         this.scriptForm = false;
         this.blockSize = block_size;                        
         this.fileName = fileName;
+        this.contentHash = contentHash;
+        this.size = size;
     }    
     public DVersion(){}
     
@@ -958,6 +998,8 @@ class DVersion implements Externalizable{
             output.writeLong(t.addedDate.getTime());
             output.writeString(t.fileName);
             output.writeInt(t.blockSize);
+            output.writeString(t.contentHash);
+            output.writeLong(t.size);
             output.writeBoolean(t.scriptForm);
             if (t.blocks == null){
                 output.writeInt(0);
@@ -977,6 +1019,8 @@ class DVersion implements Externalizable{
             res.addedDate = new Date(date);
             res.fileName = input.readString();
             res.blockSize = input.readInt();
+            res.contentHash = input.readString();
+            res.size = input.readLong();
             res.scriptForm = input.readBoolean();
             res.blocks = new ArrayList<>();
             int length = input.readInt();

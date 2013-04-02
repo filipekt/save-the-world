@@ -9,7 +9,7 @@ public enum Requests {
     /**
      * Client requests a valid instance of Database to be delivered.
      */
-    GET_DB, 
+    GET_DB,
     
     /**
      * Client requests a lightweight version of the server's database.

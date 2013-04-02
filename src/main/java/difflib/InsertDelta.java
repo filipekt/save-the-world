@@ -13,6 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
  */
+
+/*
+ * Changed by Tomas Filipek, 2013.
+ * Added:
+ *      private static class InsertDeltaSerializer extends Serializer<InsertDelta>;
+ *      public static Serializer<InsertDelta> getSerializer();
+ */
+
 package difflib;
 
 import com.esotericsoftware.kryo.Kryo;

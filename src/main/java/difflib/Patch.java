@@ -13,6 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
  */
+
+/*
+ * Changed by Tomas Filipek, 2013.
+ * Added:
+ *      private static class PatchSerializer extends Serializer<Patch>;
+ *      public static Serializer<Patch> getSerializer();
+ */
+
 package difflib;
 
 import com.esotericsoftware.kryo.Kryo;

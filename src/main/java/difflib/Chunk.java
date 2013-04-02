@@ -13,6 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
  */
+
+/*
+ * Changed by Tomas Filipek, 2013.
+ * Added:
+ *      private static class ChunkSerializer extends Serializer<Chunk>;
+ *      public static Serializer<Chunk> getSerializer();
+ */
+
 package difflib;
 
 import com.esotericsoftware.kryo.Kryo;

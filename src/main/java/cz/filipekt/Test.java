@@ -4,26 +4,51 @@
  */
 package cz.filipekt;
 
-import java.io.IOException;
-
+import cz.filipekt.diff.EditScript;
 
 /**
- *  Trida pro testovaci ucely
- * @author Lifpa
+ *
+ * @author filipekt
  */
-public class Test {                               
-	public static void main(String[] args) throws IOException {
-//            byte[] pole = new byte[256];
-//            int j = 0;
-//            for (int i = 0; i<256; i++){
-//                byte b = (byte) (Byte.MIN_VALUE + i);
-//                pole[j++] = b;
-//            }
-//            String tmp = ServerUtils.byteToString(pole);
-//            byte[] res = ServerUtils.stringToByte(tmp, pole.length%2 == 0);
-//            for (byte b : res){
-//                System.out.print((((int)b) - Byte.MIN_VALUE) + " ");
-//            }
-            
-	}                    
+public class Test {
+    
+    public static final int size = 10000;
+    public static void main (String[] args){
+        byte[] a = new byte[size];
+        int j = 0;
+        for (int i = 0; i<size; i++){
+//            a[i] = (byte)i;
+            a[i] = 1;
+        }
+        
+        byte[] b;
+        b = new byte[size];
+        j = 0;
+        for (int i = 0; i<size; i++){
+            b[i] = (byte) (((byte)i) * 2);
+//            b[i] = (byte)(i+1);
+        }     
+//        a = new byte[]{(byte)0};
+//        b = a;
+        printarray(a, 50);        
+        printarray(b, 50);
+        EditScript es = EditScript.createScript(a, b);
+        if (es != null){
+            printarray(es.applyTo(a), 50);
+        } else {
+            System.out.println("Skript nevytvoren.");
+        }
+        
+    } 
+    
+    private static void printarray(byte[] src, int count){
+        if (src == null){
+            return;
+        }
+        int limit = (src.length > count) ? count : src.length;
+        for (int i = 0; i<limit; i++){
+            System.out.print(src[i] + " ");
+        }
+        System.out.println();
+    }
 }

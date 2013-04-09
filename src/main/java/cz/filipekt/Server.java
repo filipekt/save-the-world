@@ -18,8 +18,6 @@ import java.net.ProtocolException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.FileStore;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -832,8 +830,9 @@ public final class Server {
             List<String> baseContents = ServerUtils.byteToStringList(ServerUtils.loadVersionFromDisc(referenceBase, home_dir));
             List<String> newContents = ServerUtils.byteToStringList(ServerUtils.loadVersionFromDisc(actualVersion, home_dir));            
             Patch patch = DiffUtils.diff(baseContents,newContents);    
+            int limit = referenceBase.getBlockSize();
             if (checkPatchSize){
-                if (!ServerUtils.checkSize(patch, referenceBase.getBlockSize() )){
+                if (!ServerUtils.checkSize(patch, limit)){
                     return;
                 }
             } 

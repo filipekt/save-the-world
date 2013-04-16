@@ -1,11 +1,7 @@
 package cz.filipekt;
 
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Output;
-import difflib.Patch;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -13,104 +9,16 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 
 /**
  *
  * @author Lifpa
  */
-public class ServerUtils {        
-    
-    /**
-     * Encodes the input array of bytes into a String.
-     * Each byte is encapsulated into a single character of the resulting String.
-     * @param data
-     * @return 
-     */
-    private static String byteToString(byte[] data){
-//        StringBuilder sb = new StringBuilder();
-//        if(data!=null){
-//            for (int i = 0; i<data.length; i++){            
-//                int c = 0;
-//                c |= ((data[i++] << 8) & 0xFF00);
-//                if (i < data.length){
-//                    c |=  (data[i] & 0xFF);
-//                }
-//                sb.append((char)c);
-//            }
-//        }
-//        return sb.toString();
-        
-        StringBuilder sb = new StringBuilder();
-        if(data!=null){
-            for(Byte b : data){
-                sb.append((char)((int)b + 128));
-            }
-        }
-        return sb.toString();
-    }
-    
-    /**
-     * Encodes a byte array into a list of Strings.
-     * The array is parsed into 128-byte loong subarrays, and these are processed
-     * through the byteToString(..) conversion method.
-     * @param data
-     * @return 
-     */
-    static List<String> byteToStringList(byte[] data){
-        final int length = 128;
-        int from = 0;
-        int to;        
-        byte[] data2;
-        List<String> res = new ArrayList<>();
-        while (from < data.length){
-            to = ((from+length) > data.length) ? data.length : (from + length);
-            data2 = Arrays.copyOfRange(data, from, to);
-            res.add(ServerUtils.byteToString(data2));
-            from += length;
-        }
-        return res;
-    }
-    
-    /**
-     * 
-     * @param data
-     * @param evenByteCount
-     * @return 
-     */
-    static byte[] stringListToByte(List<String> data, boolean evenByteCount){
-        StringBuilder sb = new StringBuilder();
-        for (String s : data){
-            sb.append(s);
-        }
-        String src = sb.toString();
-        return ServerUtils.stringToByte(src, evenByteCount);
-    }
-    
-    /**
-     * Checks whether the difference script size is smaller than a specified limit.
-     * @param patch
-     * @param limit
-     * @return 
-     */
-    static boolean checkSize(Patch patch, long limit){
-        try (ByteArrayOutputStream os = new ByteArrayOutputStream(); Output kryo_out = new Output(os)){
-            Kryo kryo = new Kryo();
-            kryo.writeObject(kryo_out, patch);
-            kryo_out.flush();
-            int size = os.size();
-//            System.out.println("size: " + size);
-//            System.out.println("limit: " + limit);
-            return size < limit;
-        } catch (IOException ex){
-            return false;
-        }                        
-    }
-    
+class ServerUtils {        
+                    
     /**
      * Helper class allowing for use of Long in anonymous inner classes, </br>
      * where only final variables can be references.
@@ -206,50 +114,7 @@ public class ServerUtils {
             i += blockData.length;
         }
         return fileContent;
-    }    
-    
-    
-    
-    /**
-     * Encodes a String into an array of bytes.
-     * @param data String to be encoded.
-     * @param evenByteCount Marks whether the lower 8 bits of the last character are taken into account.
-     * @return 
-     */
-    private static byte[] stringToByte(String data, boolean evenByteCount){           
-//        if(data!=null && !data.isEmpty()){
-//            int length = data.length() * 2;
-//            if (!evenByteCount){
-//                length -= 1;
-//            }
-//            byte[] res = new byte[length];
-//            int i = 0;
-//            for (char c : data.toCharArray()){
-//                byte a = (byte) ((c >>> 8) & 0xFF);
-//                byte b = (byte) (c & 0xFF);
-//                res[i++] = a;
-//                if (i < res.length){
-//                    res[i++] = b;
-//                }
-//            }
-//            return res;
-//        } else {
-//            return new byte[0];
-//        }
-        
-        if(data!=null && !data.isEmpty()){
-            int length = data.length();
-            byte[] res = new byte[length];
-            int i = 0;            
-            for(char c : data.toCharArray()){
-                byte b = (byte)((int)c -128);
-                res[i++] = b;
-            }
-            return res;
-        } else {
-            return new byte[0];
-        }
-    }          
+    }                
     
     /**
      * Determines the optimal block size used for storing a file's contents.
@@ -261,14 +126,14 @@ public class ServerUtils {
         switch(Integer.toHexString(fileSize).length()){
             case 1:
             case 2:
-                return c;
+                return c;           // 16
             case 3:
-                return c*16;
+                return c*16;        // 256
             case 4:
-                return c*16*16;
+                return c*16*16;     // 4096
             default:
-                return c*16*16*16;
-        }
+                return c*16*16*16;  // 65536
+        }      
     }    
     
     /**
@@ -416,16 +281,7 @@ public class ServerUtils {
                 block.incrementRefCount();
             }
         }
-    }
-        
-    /**
-     * Retrieves an editational script from the database
-     * @param version_list
-     * @return 
-     */
-    static Patch getScript(DVersion verze, Map<DVersion,Patch> scripts){
-        return scripts.get(verze);
-    }
+    }            
     
     /**
      * Saves the contents ("bytes") of the block "hash" into the appropriate file on disc
@@ -460,10 +316,7 @@ public class ServerUtils {
         Path p = Paths.get(home_dir,key);
         Files.delete(p);
     }
-    
-
-    
-    
+            
     /**
      * In the given list of program arguments "args", that have been parsed <br/>
      * in the standard way with whitespace as delimiter, concatenates the <br/>
@@ -508,4 +361,3 @@ public class ServerUtils {
         return res;
     }
 }
-

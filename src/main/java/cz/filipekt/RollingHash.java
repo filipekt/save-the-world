@@ -11,7 +11,7 @@ import java.util.List;
  *  represented as sequence of bytes
  * @author Lifpa
  */
-public class RollingHash{
+class RollingHash{
     /**
      * The helper value for updating the main rolling hash value
      */
@@ -21,30 +21,21 @@ public class RollingHash{
      * The main rolling hash value
      */
     private long B = 0L;
-
-    /**
-     * 
-     * @return The value of rolling hash for "data" , represented in hexadecimal format
-     */
-    public String getHexHash(){        
-        return Long.toHexString(B);
-    }    
     
     /**
      * 
      * @return The value of rolling hash for "data".
      */
-    public long getHash(){
+    long getHash(){
         return B;
     }
     
     /**
      * 
-     * @return The value of safe hash for "data" , represented in hexadecimal format
-     * @throws NoSuchAlgorithmException 
+     * @return The value of safe hash for "data" , represented in hexadecimal format     
      */
-    public String getHexHash2() throws NoSuchAlgorithmException{
-        return computeHash2(data.getInternalArray(), data.left, data.right);
+    String getHexHash2() {
+        return RollingHash.computeHash2(data.getInternalArray(), counterLength, data.left, data.right);
     }       
     
     /**
@@ -56,7 +47,7 @@ public class RollingHash{
      * 
      * @return "data" as byte[], but just those bytes in the "valid" section
      */
-    public byte[] getValidData(){
+    byte[] getValidData(){
         byte[] res = new byte[valid];
         int i = 0;
         byte[] validData = Arrays.copyOfRange(data.asArray(), counterLength-valid, counterLength);
@@ -74,7 +65,7 @@ public class RollingHash{
     /**
      * Makes all bytes in "data" invalid
      */
-    public void resetValid(){
+    void resetValid(){
         valid = 0;
     }
     
@@ -83,11 +74,11 @@ public class RollingHash{
      */
     private final int counterLength;    
 
-    public int getCounterLength() {
+    int getCounterLength() {
         return counterLength;
     }
 
-    public RollingHash(int n){
+    RollingHash(int n){
         counterLength = n;
         data = new RoundArray(n * 16);
         for (int i = 0; i<n; i++){
@@ -101,7 +92,7 @@ public class RollingHash{
      * @param b
      * @return The byte which was dropped from the "counter"
      */
-    public byte add(byte b){        
+    byte add(byte b){        
         byte old_byte = data.getFirst();
         byte new_byte = b;
         data.addLast(b);
@@ -113,71 +104,86 @@ public class RollingHash{
             valid++;
         }
         return data.removeFirst();
-    }           
+    }                   
     
     /**
-     * 
-     * @param in_data
-     * @return Rolling hash for "in_data", with "counter" of size equal to the size of "in_data"
+     * Computes the primary hash for "inData", padding the input data with zero's at the end up to 
+     * "capacity", if needed.
+     * @param inData
+     * @return Rolling hash for "inData", with "counter" of size equal to the size of "inData"
      */    
-    public static long computeHash(byte[] in_data){
-        RollingHash rh = new RollingHash(in_data.length);
-        for(byte b : in_data){
+    static long computeHash(List<Byte> inData, int capacity){
+        byte[] inData2 = new byte[capacity];
+        int i = 0;
+        for (Byte b : inData){
+            inData2[i++] = b;
+            if (i >= capacity){
+                break;
+            }
+        }
+        while (i < capacity){
+            inData2[i++] = (byte)0;
+        }
+        return RollingHash.computeHash(inData2);
+    }     
+    
+    static long computeHash(byte[] data){
+        RollingHash rh = new RollingHash(data.length);
+        for (byte b : data){
             rh.add(b);
         }
         return rh.getHash();
-    }    
+    }
     
-    /**
-     * 
-     * @param in_data
-     * @return Rolling hash for "in_data", with "counter" of size equal to the size of "in_data"
-     */    
-    public static long computeHash(List<Byte> in_data){
-        RollingHash rh = new RollingHash(in_data.size());
-        for(byte b : in_data){
-            rh.add(b);
-        }
-        return rh.getHash();
-    }        
-    
-
-    /**
-     * 
-     * @param in_data
-     * @return Hexadecimal SHA-2 hash for "in_data"
-     * @throws NoSuchAlgorithmException 
-     */
-    public static String computeHash2(byte[] in_data) throws NoSuchAlgorithmException {
+   
+    static String computeHash2(byte[] in_data) {
         if ((in_data == null) || (in_data.length == 0)){
             return "";
         }
-        MessageDigest md = MessageDigest.getInstance("SHA-512");
-        md.update(in_data);         
-        byte[] h = md.digest();
-        return new BigInteger(h).toString(16);       
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(in_data);         
+            byte[] h = md.digest();
+            return new BigInteger(h).toString(16);       
+        } catch (NoSuchAlgorithmException ex){
+            System.out.println(ex.getLocalizedMessage());
+            return "";
+        }
     }
     
-    private String computeHash2(byte[] in_data, int from, int to) throws NoSuchAlgorithmException{
-       MessageDigest md = MessageDigest.getInstance("SHA-512");
-       md.update(in_data, from, to - from); 
-       byte[] h = md.digest();
-       return new BigInteger(h).toString(16);        
+
+    
+    static String computeHash2(byte[] data, int windowSize, int from, int to) {
+        byte[] completeData = new byte[windowSize];
+        int i = 0;
+        for (int j = from; j < to; j++){
+            completeData[i++] = data[j];
+        }
+        while (i < windowSize){
+            completeData[i++] = (byte)0;
+        }
+        return RollingHash.computeHash2(completeData);
     }
     
     /**
-     * 
+     * Computes the secondary hash for "inData", padding the input data with zero's at the end up to 
+     * "capacity", if needed.
      * @param in_data
      * @return Hexadecimal SHA-2 hash for "in_data"
-     * @throws NoSuchAlgorithmException 
      */
-    public static String computeHash2(List<Byte> in_data) throws NoSuchAlgorithmException {
-       byte[] data2 = new byte[in_data.size()];
-       int i = 0;
-       for(byte b : in_data){
+    static String computeHash2(List<Byte> in_data, int capacity) {
+        byte[] data2 = new byte[capacity];
+        int i = 0;
+        for(byte b : in_data){
            data2[i++] = b;
-       }
-       return RollingHash.computeHash2(data2);
+           if (i >= capacity){
+               break;
+           }
+        }
+        while (i<capacity){
+           data2[i++] = (byte)0;
+        }
+        return RollingHash.computeHash2(data2);
     }  
     
     /**

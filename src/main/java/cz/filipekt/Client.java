@@ -1,7 +1,6 @@
 package cz.filipekt;
 
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.KryoException;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import java.io.BufferedOutputStream;
@@ -19,7 +18,6 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -44,12 +42,7 @@ public class Client {
     /**
      * Contains all the localized messages that are shown to the user.
      */
-    private ResourceBundle messages;    
-    
-    /**
-     * The valid locale
-     */
-    private Locale locale;    
+    private ResourceBundle messages;         
     
     private static void start(String[] args, BufferedReader br){
         try {                        
@@ -137,13 +130,7 @@ public class Client {
     /**
      * Standard output for client
      */
-    private PrintStream stdout;
-    
-    /**
-     * The upper limit on how many times the client tries to <br/>
-     * take care of a user's request
-     */
-    private static final int attempt_limit = 3;
+    private PrintStream stdout;      
     
     /**
      * Socket used to communicate with server
@@ -176,11 +163,11 @@ public class Client {
         socket = new Socket(addr,port);        
         in_s = socket.getInputStream();
         out_s = socket.getOutputStream();
-        kryo = new Kryo();        
-        kryo_output = new Output(out_s);
+        kryo = new Kryo(null); 
+        kryo.setAutoReset(true);
+        kryo_output = new Output(out_s);        
         kryo_input = new Input(in_s);
-        this.stdin = (stdin == null) ? new BufferedReader(new InputStreamReader(System.in)) : stdin;
-        this.locale = locale;
+        this.stdin = (stdin == null) ? new BufferedReader(new InputStreamReader(System.in)) : stdin;        
         this.messages = ResourceBundle.getBundle("cz.filipekt.WorldBundle", locale);
         this.stdout = (stdout == null) ? System.out : stdout;     
         this.interactive = interactive;
@@ -235,7 +222,6 @@ public class Client {
                 return false;
             }
         } catch (IOException ex) {
-//            Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
             stdout.println(ex.getLocalizedMessage());
         }
         return true;
@@ -266,7 +252,7 @@ public class Client {
                 }
                 try{                            
                     serveAdd(request, null);
-                } catch (IOException | NoSuchAlgorithmException ex){
+                } catch (IOException ex){
                     stdout.println(messages.getString("attempt_failed"));
                 }
                 break;
@@ -332,7 +318,7 @@ public class Client {
     
     void terminateConnection(){
         try {
-            kryo.writeObject(kryo_output, Requests.END);
+            kryo.writeObject(kryo_output, Requests.END);            
         } catch (Exception ex){}            
     }
 
@@ -419,7 +405,7 @@ public class Client {
         if((!item.isDir()) && (verze >= db.findFile(sourceFile).getVersionList().size())){
             throw new WrongVersionNumber();
         }
-        kryo.writeObject(kryo_output, Integer.valueOf(verze));
+        kryo_output.writeInt(verze);
         kryo_output.flush();
 
         byte[] data;
@@ -577,39 +563,16 @@ public class Client {
      * Downloads a valid instance of Database from the server
      * @return 
      */
-    Database getDB() {
-        for(int i = 0; i<attempt_limit; i++){
-            try {                            
-                kryo.writeObject(kryo_output, Requests.GET_DB);
-                kryo_output.flush();
-//                Database db = (Database) ois.readObject();
-                Database db = kryo.readObject(kryo_input, Database.class, Database.getSerializer());
-                return db;
-            } catch (KryoException ex) {
-//                Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
-                stdout.println(ex.getLocalizedMessage());
-            }            
-        }
-        return null;
+    Database getDB() {        
+        kryo.writeObject(kryo_output, Requests.GET_DB);
+        kryo_output.flush();            
+        return kryo.readObject(kryo_input, Database.class, Database.getSerializer());                                   
     }
     
-    private LightDatabase getLightDatabase(boolean enumForm) {
-        for(int i = 0; i<attempt_limit; i++){
-            try {            
-                if (enumForm){
-                    kryo.writeObject(kryo_output, Requests.GET_LIGHT_DB);
-                } else {
-                    kryo.writeObject(kryo_output, "get_light_db");
-                }
-                kryo_output.flush();
-                LightDatabase ld = kryo.readObject(kryo_input, LightDatabase.class, LightDatabase.getSerializer());
-                return ld;
-            } catch (KryoException ex) {
-//                Logger.getLogger(Client.class.getName()).log(Level.SEVERE, null, ex);
-                stdout.println(ex.getLocalizedMessage());
-            }            
-        }
-        return null;
+    private LightDatabase getLightDatabase() {        
+        kryo_output.writeString("get_light_db");                
+        kryo_output.flush();        
+        return kryo.readObject(kryo_input, LightDatabase.class, LightDatabase.getSerializer());                     
     }    
     
     private boolean itemExistsOnServer(Collection<String> target){
@@ -620,7 +583,7 @@ public class Client {
         kryo.writeObject(kryo_output, Requests.ITEM_EXISTS);
         kryo.writeObject(kryo_output, target2);
         kryo_output.flush();
-        return kryo.readObject(kryo_input, boolean.class);
+        return kryo_input.readBoolean();
     }
     
     /**
@@ -628,7 +591,7 @@ public class Client {
      * @param request
      * @throws PrenosSeNepovedl 
      */
-    void serveAdd(List<String> request, JFrame frame) throws IOException, NoSuchAlgorithmException {                        
+    void serveAdd(List<String> request, JFrame frame) throws IOException {                        
         String fname = request.get(1);
         Collection<String> target = ServerUtils.parseName(request.get(2));
         Path file = Paths.get(fname);
@@ -656,14 +619,14 @@ public class Client {
         if (!alreadyPresent){                                    
             if(Files.isDirectory(file)){
                 kryo.writeObject(kryo_output, Requests.CREAT_DIR);
-                kryo.writeObject(kryo_output, ServerUtils.getDirectorySize(file));
+                kryo_output.writeLong(ServerUtils.getDirectorySize(file));
             } else {
                 kryo.writeObject(kryo_output, Requests.CREAT_FILE);                
-                kryo.writeObject(kryo_output, Files.size(file));
+                kryo_output.writeLong(Files.size(file));
             }            
             kryo.writeObject(kryo_output, target.toArray(new String[0]));
             kryo_output.flush();
-            boolean enough_space = kryo.readObject(kryo_input, Boolean.TYPE);
+            boolean enough_space = kryo_input.readBoolean();
             if(!enough_space){
                 if (frame == null){
                     stdout.println(messages.getString("not_enough_space"));
@@ -692,20 +655,20 @@ public class Client {
             kryo.writeObject(kryo_output, Requests.CHECK_CHANGES);
             kryo.writeObject(kryo_output, target.toArray(new String[0]));                
             String contentHash = RollingHash.computeHash2(fileContents);
-            kryo.writeObject(kryo_output, contentHash);
+            kryo_output.writeString(contentHash);
             kryo_output.flush();
-            boolean changed = kryo.readObject(kryo_input, boolean.class);                    
+            boolean changed = kryo_input.readBoolean();
             if (changed){
                 kryo.writeObject(kryo_output, Requests.CREAT_VERS);
-                kryo.writeObject(kryo_output, fileContents.length);
+                kryo_output.writeLong((long)fileContents.length);
                 kryo_output.flush();
-                boolean enough_space = kryo.readObject(kryo_input, Boolean.TYPE);
+                boolean enough_space = kryo_input.readBoolean();
                 if(enough_space){
                     kryo.writeObject(kryo_output, target.toArray(new String[0]));
-                    kryo.writeObject(kryo_output, (Integer)vel_bloku);
-                    kryo.writeObject(kryo_output, contentHash);
-                    kryo_output.flush();  
-                    windowLoop(fileContents, vel_bloku);                                                                            
+                    kryo_output.writeInt(vel_bloku);                    
+                    kryo_output.writeString(contentHash);                                        
+                    windowLoop(fileContents, vel_bloku); 
+                    kryo_input.readBoolean(); //server-side finished
                 } else {
                     if (frame == null){
                         stdout.println(messages.getString("not_enough_space"));
@@ -726,12 +689,10 @@ public class Client {
      * @param file
      * @param db
      * @param block_size
-     * @throws IOException
-     * @throws NoSuchAlgorithmException 
+     * @throws IOException     
      */
-    private void windowLoop(byte[] fileContents, int block_size) throws IOException, NoSuchAlgorithmException{
-        LightDatabase ld = getLightDatabase(false);        
-//        try (BufferedInputStream fin = new BufferedInputStream(Files.newInputStream(file))) {          
+    private void windowLoop(byte[] fileContents, int block_size) throws IOException {
+        LightDatabase ld = getLightDatabase();        
         try (ByteArrayInputStream fin = new ByteArrayInputStream(fileContents)){
             RollingHash rh = new RollingHash(block_size);
             for(int i = 0; i<block_size-1; i++){        
@@ -769,21 +730,22 @@ public class Client {
                 if(is_in_db){
 //                    Send the previous bytes.
                     if(!not_matched.isEmpty()){                        
-                        kryo.writeObject(kryo_output, "raw_data");                        
+                        kryo_output.writeString("raw_data");
                         byte[] res = new byte[not_matched.size()];
                         int i = 0;
                         for (Byte bb : not_matched){
                             res[i++] = bb;
                         }                                                
                         kryo.writeObject(kryo_output, res);
+                        kryo_output.flush();
                         not_matched.clear();
-                        ld = getLightDatabase(false);
+                        ld = getLightDatabase();
                     }
                   
 //                    Send the hash values of the block.
-                    kryo.writeObject(kryo_output, "hash");
-                    kryo.writeObject(kryo_output, hash);
-                    kryo.writeObject(kryo_output, hexHash2);
+                    kryo_output.writeString("hash");
+                    kryo_output.writeLong(hash);
+                    kryo_output.writeString(hexHash2);
                     kryo_output.flush();
 
 //                    And move on.
@@ -805,9 +767,9 @@ public class Client {
                 } 
 
             }
-            
-            // co ted se zbytky dat v nesparovane
-            // pripad ze soubor je mensi nez velikost bloku
+                        
+//            Deal with data in "not_matched".
+//            Covers the case when the input file is smaller than the block size.
             if (add_from_rh){
                 for (byte b : rh.getValidData()){
                     not_matched.add(b);
@@ -817,32 +779,34 @@ public class Client {
 //          All the bytes that are left must be now sent.
             boolean finished = false;
             if(not_matched.size() < block_size){
-                long hash = RollingHash.computeHash(not_matched);
-                String hexHash2 = RollingHash.computeHash2(not_matched);                               
+                long hash = RollingHash.computeHash(not_matched, block_size);
+                String hexHash2 = RollingHash.computeHash2(not_matched, block_size);                               
                 if ((ld.blockExists1(hash)) && (ld.blockExists2(hexHash2))){
-                    kryo.writeObject(kryo_output, "hash");
-                    kryo.writeObject(kryo_output, hash);
-                    kryo.writeObject(kryo_output, hexHash2);
+                    kryo_output.writeString("hash");
+                    kryo_output.writeLong(hash);
+                    kryo_output.writeString(hexHash2);
+                    kryo_output.flush();
                     finished = true;
                 } 
                 
             }
             if (!finished){
-                kryo.writeObject(kryo_output, "raw_data");
+                kryo_output.writeString("raw_data");
                 byte[] res = new byte[not_matched.size()];
                 int i = 0;
                 for (Byte b : not_matched){
                     res[i++] = b;
                 }
                 kryo.writeObject(kryo_output, res);
+                kryo_output.flush();
             }
-            kryo.writeObject(kryo_output, "end");
+            kryo_output.writeString("end");
             kryo_output.flush();
         }
     }
     
     /**
-     * Serves the user request of type "delete_ver", which deletes a version of a file,
+     * Serves the user request of type "delete", which deletes a version of a file,
      * unless the version is the only one present.
      * @param request
      * @return 
@@ -862,9 +826,9 @@ public class Client {
         List<String> fileName2 = ServerUtils.parseName(fileName);
         kryo.writeObject(kryo_output, Requests.DEL_VERS);
         kryo.writeObject(kryo_output, fileName2.toArray(new String[0]));
-        kryo.writeObject(kryo_output, verNum2);
+        kryo_output.writeInt(verNum2);
         kryo_output.flush();
-        return kryo.readObject(kryo_input, boolean.class);
+        return kryo_input.readBoolean();
     }
 }
 

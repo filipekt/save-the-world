@@ -3,9 +3,7 @@ package cz.filipekt;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import difflib.DiffUtils;
-import difflib.Patch;
-import difflib.PatchFailedException;
+import cz.filipekt.diff.EditScript;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -139,7 +137,7 @@ public final class Server {
      */
     private final long reservedSpace;
 
-    public long getReservedSpace() {
+    private long getReservedSpace() {
         return reservedSpace;
     }
     
@@ -220,7 +218,6 @@ public final class Server {
                 }
             }
         } catch (IOException ex) {                            
-//                Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
             System.err.println(messages.getString("socket_not_ack") + " " + ex.getLocalizedMessage());
         }                            
     }
@@ -248,7 +245,8 @@ public final class Server {
     private void serveClient(Socket socket) throws IOException, NoSuchAlgorithmException{
         OutputStream rout = socket.getOutputStream();
         InputStream rin = socket.getInputStream();        
-        Kryo kryo = new Kryo();
+        Kryo kryo = new Kryo(null);
+        kryo.setAutoReset(true);
         try (Output kryo_out = new Output(rout); Input kryo_in = new Input(rin)) {
             Vnejsi:
             while(true){
@@ -257,7 +255,7 @@ public final class Server {
                     List<String> fname;
                     long size;
                     switch(action_type){
-                        case GET_DB:                                
+                        case GET_DB:                             
                             kryo.writeObject(kryo_out, db, Database.getSerializer());
                             kryo_out.flush();
                             break;
@@ -267,79 +265,77 @@ public final class Server {
                             kryo_out.flush();
                             break;
                         case ITEM_EXISTS:
-                            String[] targetPath = kryo.readObject(kryo_in, String[].class);                            
-                            if (targetPath != null){
-                                kryo.writeObject(kryo_out, db.itemExists(Arrays.asList(targetPath)));
-                                kryo_out.flush();
-                            }
+                            fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
+                            kryo_out.writeBoolean(db.itemExists(fname));
+                            kryo_out.flush();
                             break;
                         case DEL_VERS:
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
-                            int versionIndex = kryo.readObject(kryo_in, int.class);
+                            int versionIndex = kryo_in.readInt();
                             DItem item = db.getItem(fname);
                             if ((item == null) || item.isDir()){
-                                kryo.writeObject(kryo_out, Boolean.FALSE);
+                                kryo_out.writeBoolean(false);
                             } else {
                                 try {
                                     DFile file = (DFile) item;
                                     safelyDeleteVersion(file, versionIndex);
-                                    kryo.writeObject(kryo_out, Boolean.TRUE);
+                                    kryo_out.writeBoolean(true);
                                 } catch (BlockNotFound | IOException | NoSuchAlgorithmException | 
-                                        NotEnoughSpaceOnDisc | PatchFailedException | TooFewVersions ex){
-                                    kryo.writeObject(kryo_out, Boolean.FALSE);
+                                        NotEnoughSpaceOnDisc | TooFewVersions ex){
+                                    kryo_out.writeBoolean(false);
                                 }
                             }
                             kryo_out.flush();
                             break;
                         case CREAT_FILE:
-                            size = kryo.readObject(kryo_in, long.class);
+                            size = kryo_in.readLong();
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                             if (size < getAvailableSpace()){
                                 db.addFile(fname);
-                                kryo.writeObject(kryo_out, Boolean.TRUE);                                  
+                                kryo_out.writeBoolean(true);
                             } else {                                
                                 removeOldItems(1);                                                                    
                                 if (size < getAvailableSpace()){
                                     db.addFile(fname);
-                                    kryo.writeObject(kryo_out, Boolean.TRUE);                                
+                                    kryo_out.writeBoolean(true);
                                 } else {
-                                    kryo.writeObject(kryo_out, Boolean.FALSE);
+                                    kryo_out.writeBoolean(false);
                                 }                            
                             }
                             kryo_out.flush();
                             break;
                         case CHECK_CHANGES:
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
-                            String contentHash = kryo.readObject(kryo_in, String.class);
+                            String contentHash = kryo_in.readString();
                             DFile file = db.findFile(fname);
                             if (file != null){
                                 DVersion latestVersion = file.getLatestVersion();
                                 if (latestVersion == null){
-                                    kryo.writeObject(kryo_out, true);
+                                    kryo_out.writeBoolean(true);
                                 } else {
-                                    kryo.writeObject(kryo_out, !latestVersion.getContentHash().equals(contentHash));
+                                    kryo_out.writeBoolean(!latestVersion.getContentHash().equals(contentHash));
                                 }                                                                                                
                                 kryo_out.flush();
                             }
                             break;
                         case CREAT_VERS:                             
-                            size = kryo.readObject(kryo_in, long.class);
+                            size = kryo_in.readLong();
                             if (size < getAvailableSpace()){
-                                kryo.writeObject(kryo_out, Boolean.TRUE);
+                                kryo_out.writeBoolean(true);
                             } else {                                
                                 removeOldItems(1);                                                                    
                                 if (size >= getAvailableSpace()){
-                                    kryo.writeObject(kryo_out, Boolean.FALSE);
+                                    kryo_out.writeBoolean(false);
                                     kryo_out.flush();
                                     break;
                                 } else {
-                                    kryo.writeObject(kryo_out, Boolean.TRUE);
+                                    kryo_out.writeBoolean(true);
                                 }
                             }
                             kryo_out.flush();
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
-                            int bsize = kryo.readObject(kryo_in, Integer.TYPE);
-                            contentHash = kryo.readObject(kryo_in, String.class);
+                            int bsize = kryo_in.readInt();
+                            contentHash = kryo_in.readString();
                             List<DBlock> new_blocks;
                             List<DBlock> block_list = new ArrayList<>();                        
                             do{
@@ -361,12 +357,14 @@ public final class Server {
                                     DVersion base = file.getLatestNonScript();
                                     transformBlocksToScript(base, version, true);
                                 }
-                                db.addVersion(fname, version);
-                                break;
+                                file.getVersionList().add(version);                                
                             }
+                            kryo_out.writeBoolean(true);
+                            kryo_out.flush();
+                            break;
                         case GET_FILE:
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
-                            versionIndex = kryo.readObject(kryo_in, int.class);
+                            versionIndex = kryo_in.readInt();
                             DFile ds = db.findFile(fname);
                             if (ds != null){
                                 byte[] res = serveGet(ds, versionIndex);
@@ -377,26 +375,25 @@ public final class Server {
                         case END:
                             break Vnejsi;
                         case CREAT_DIR:
-                            size = kryo.readObject(kryo_in, long.class);
-                            if (size < getAvailableSpace()){
-                                List<String> path = Arrays.asList(kryo.readObject(kryo_in, String[].class));
+                            size = kryo_in.readLong();
+                            List<String> path = Arrays.asList(kryo.readObject(kryo_in, String[].class));
+                            if (size < getAvailableSpace()){                                
                                 db.makeDirs(path);    
-                                kryo.writeObject(kryo_out, Boolean.TRUE);                                
+                                kryo_out.writeBoolean(true);
                             } else {                                
                                 removeOldItems(1);                                                                    
                                 if (size < getAvailableSpace()){
-                                    List<String> path = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                                     db.makeDirs(path);    
-                                    kryo.writeObject(kryo_out, Boolean.TRUE);                                
+                                    kryo_out.writeBoolean(true);
                                 } else {
-                                    kryo.writeObject(kryo_out, Boolean.FALSE);
+                                    kryo_out.writeBoolean(false);
                                 }                                  
                             }
                             kryo_out.flush();
                             break;
                         case GET_ZIP:
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
-                            versionIndex = kryo.readObject(kryo_in, int.class);
+                            versionIndex = kryo_in.readInt();
                             item = db.getItem(fname);
                             if (item != null){
                                 HashMap<DItem,String> fileList = new HashMap<>();
@@ -436,23 +433,24 @@ public final class Server {
     private List<DBlock> loadBlock(Input kryo_in, Output kryo_out, int bsize) 
             throws IOException, ClassNotFoundException, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{   
         
-        Kryo kryo = new Kryo();
-        String message = kryo.readObject(kryo_in, String.class);
+        Kryo kryo = new Kryo(null);
+        kryo.setAutoReset(true);
+        String message = kryo_in.readString();
         while (message.equals("get_light_db")){
-            LightDatabase ld = db.getLightDatabase();
+            LightDatabase ld = db.getLightDatabase();            
             kryo.writeObject(kryo_out, ld, LightDatabase.getSerializer());
             kryo_out.flush();
-            message = kryo.readObject(kryo_in, String.class);
+            message = kryo_in.readString();
         }
         switch(message){
             case "end":
                 return null;
             case "raw_data":                    
-                byte[] data = kryo.readObject(kryo_in, byte[].class);
+                byte[] data = kryo.readObject(kryo_in, byte[].class);                
                 return create_save_blocks(data,bsize);                    
             case "hash":
-                long hash = kryo.readObject(kryo_in, long.class);
-                String hash2 = kryo.readObject(kryo_in, String.class);
+                long hash = kryo_in.readLong();
+                String hash2 = kryo_in.readString();
                 DBlock block = db.findBlock(hash, hash2);
                 if (block == null){
                     return new LinkedList<>();
@@ -475,7 +473,7 @@ public final class Server {
      * @throws NoSuchAlgorithmException 
      */
     private void safelyDeleteVersion(DFile file, int versionNum) 
-            throws TooFewVersions, IOException, PatchFailedException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
+            throws TooFewVersions, IOException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
         synchronized (lockObject) {
             if (file == null){
                 throw new IOException();
@@ -623,7 +621,8 @@ public final class Server {
         if(Files.size(f)==0){            
             return new Database(new HashMap<String,DItem>(), new TreeMap<String,DBlock>(), new TreeSet<Long>(), new TreeSet<String>());
         } else {            
-            Kryo kryo = new Kryo();
+            Kryo kryo = new Kryo(null);
+            kryo.setAutoReset(true);
             try (Input kryo_in = new Input(Files.newInputStream(f))){
                 return kryo.readObject(kryo_in, Database.class, Database.getSerializer());
             } catch (IOException ex) {
@@ -638,8 +637,9 @@ public final class Server {
      */
     private void saveDB() {        
         Path f = Paths.get(home_dir, "index");        
-        Kryo kryo = new Kryo();
-        try (Output kryo_out = new Output(Files.newOutputStream(f))){
+        Kryo kryo = new Kryo(null);
+        kryo.setAutoReset(true);
+        try (Output kryo_out = new Output(Files.newOutputStream(f))){            
             kryo.writeObject(kryo_out, db, Database.getSerializer());
             kryo_out.flush();
         } catch (IOException ex) {
@@ -675,37 +675,35 @@ public final class Server {
     
     /**
      * Each DVersion represented as a script, is here mapped to its script
-     */
-    private final Map<DVersion,Patch> scripts;
+     */    
+    private final Map<DVersion, EditScript> scripts;
     
     /**
      * Loads all the scripts from disc
      * @throws IOException
      * @throws ClassNotFoundException 
      */
-    private Map<DVersion,Patch> loadScripts() throws IOException, ClassNotFoundException{
+    private Map<DVersion,EditScript> loadScripts() throws IOException, ClassNotFoundException{
         Path f = Paths.get(home_dir, "skripty");
         if (Files.notExists(f)){
             Files.createFile(f);
         }
         if(Files.size(f)==0){            
             return new HashMap<>();
-        } else {            
-//            try(ObjectInputStream oin = new ObjectInputStream(Files.newInputStream(f))) {                                
-//                return (Map<DVersion,Patch>) oin.readObject();
-//            }
+        } else {   
             try (Input kryo_in = new Input(Files.newInputStream(f))){
-                Kryo kryo = new Kryo();
+                Kryo kryo = new Kryo(null);
+                kryo.setAutoReset(true);
                 int size = kryo_in.readInt();
-                Map<DVersion,Patch> res = new HashMap<>();
+                Map<DVersion,EditScript> res = new HashMap<>();
                 for (int i = 0; i < size; i++){
                     DVersion key = kryo.readObject(kryo_in, DVersion.class, DVersion.getSerializer());
-                    Patch value = kryo.readObject(kryo_in, Patch.class, Patch.getSerializer());
+                    EditScript value = kryo.readObject(kryo_in, EditScript.class, EditScript.getSerializer());
                     res.put(key, value);
                 }
                 return res;
             }
-        }
+        }        
     }
     
     /**
@@ -713,17 +711,13 @@ public final class Server {
      */
     private void saveScripts(){        
         Path f = Paths.get(home_dir, "skripty");
-//        try(ObjectOutputStream oout = new ObjectOutputStream(Files.newOutputStream(f))){
-//            oout.writeObject(scripts);
-//        } catch (IOException ex){
-//            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
-//        }        
         try (Output kryo_out = new Output(Files.newOutputStream(f))){
-            Kryo kryo = new Kryo();
+            Kryo kryo = new Kryo(null);
+            kryo.setAutoReset(true);
             kryo_out.writeInt(scripts.size());
-            for (Entry<DVersion,Patch> entry : scripts.entrySet()){
+            for (Entry<DVersion,EditScript> entry : scripts.entrySet()){
                 kryo.writeObject(kryo_out, entry.getKey(), DVersion.getSerializer());
-                kryo.writeObject(kryo_out, entry.getValue(), Patch.getSerializer());
+                kryo.writeObject(kryo_out, entry.getValue(), EditScript.getSerializer());
             }
             kryo_out.flush();
         } catch (IOException ex) {
@@ -753,22 +747,14 @@ public final class Server {
                         }
                     }
                     zaklad = fileToGet.getVersionList().get(i);
-                    byte[] obsahZaklad = ServerUtils.loadVersionFromDisc(zaklad, home_dir);
-//                    String obsahZakladString = ServerUtils.byteToString(obsahZaklad);
-//                    List<String> baseContents = new ArrayList<>();
-//                    baseContents.add(obsahZakladString);
-//                    List<String> res = (List<String>) DiffUtils.patch(baseContents, ServerUtils.getScript(verze,scripts));                
-//                    String res1 = res.get(0);
-//                    return ServerUtils.stringToByte(res1, (verze.getSize()%2) == 0);                
-                    
-                    List<String> list = ServerUtils.byteToStringList(obsahZaklad);
-                    List<String> res = (List<String>) DiffUtils.patch(list, ServerUtils.getScript(verze, scripts));
-                    return ServerUtils.stringListToByte(res, (verze.getSize()%2) == 0);
+                    byte[] obsahZaklad = ServerUtils.loadVersionFromDisc(zaklad, home_dir);                    
+                    EditScript editScript = scripts.get(verze);
+                    return editScript.applyTo(obsahZaklad);
                     
                 } else {
                     return ServerUtils.loadVersionFromDisc(verze, home_dir);
                 }
-            } catch (PatchFailedException | IOException | BlockNotFound ex){
+            } catch (IOException | BlockNotFound ex){
                 System.err.println("\"Get\" " + messages.getString("request_failed"));
                 return null;
             }
@@ -804,11 +790,12 @@ public final class Server {
      * @throws NoSuchAlgorithmException 
      */
     private void transformScriptToBlocks(DVersion referenceBase, DVersion actualVersion) 
-            throws IOException, PatchFailedException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
+            throws IOException, BlockNotFound, NoSuchAlgorithmException, NotEnoughSpaceOnDisc{
         synchronized (lockObject) {
-            List<String> baseContents = ServerUtils.byteToStringList(ServerUtils.loadVersionFromDisc(referenceBase, home_dir));
-            List<String> newContents = (List<String>) DiffUtils.patch(baseContents, ServerUtils.getScript(actualVersion, scripts));
-            List<DBlock> blocks = create_save_blocks(ServerUtils.stringListToByte(newContents, (actualVersion.getSize()%2) == 0), actualVersion.getBlockSize());            
+            byte[] baseBytes = ServerUtils.loadVersionFromDisc(referenceBase, home_dir);
+            EditScript editScript = scripts.get(actualVersion);
+            byte[] newBytes = editScript.applyTo(baseBytes);
+            List<DBlock> blocks = create_save_blocks(newBytes, actualVersion.getBlockSize());
             actualVersion.setScriptForm(false);
             actualVersion.setBlocks(blocks);
             ServerUtils.linkBlocksToVersion(actualVersion);
@@ -827,19 +814,16 @@ public final class Server {
     private void transformBlocksToScript(DVersion referenceBase, DVersion actualVersion, boolean checkPatchSize) 
             throws IOException, BlockNotFound{
         synchronized (lockObject) {            
-            List<String> baseContents = ServerUtils.byteToStringList(ServerUtils.loadVersionFromDisc(referenceBase, home_dir));
-            List<String> newContents = ServerUtils.byteToStringList(ServerUtils.loadVersionFromDisc(actualVersion, home_dir));            
-            Patch patch = DiffUtils.diff(baseContents,newContents);    
-            int limit = referenceBase.getBlockSize();
-            if (checkPatchSize){
-                if (!ServerUtils.checkSize(patch, limit)){
-                    return;
-                }
-            } 
-            actualVersion.setScriptForm(true);
-            actualVersion.setBlocks(null);
-            ServerUtils.unlinkBlocksFromVersion(actualVersion);
-            scripts.put(actualVersion, patch);                            
+            byte[] baseBytes = ServerUtils.loadVersionFromDisc(referenceBase, home_dir);
+            byte[] newBytes = ServerUtils.loadVersionFromDisc(actualVersion, home_dir);
+            int limit = actualVersion.getBlockSize();
+            EditScript editScript = EditScript.createScript(baseBytes, newBytes, (checkPatchSize ? limit : 0), true);
+            if (editScript != null){                
+                actualVersion.setScriptForm(true);
+                actualVersion.setBlocks(null);
+                ServerUtils.unlinkBlocksFromVersion(actualVersion);
+                scripts.put(actualVersion, editScript);                            
+            }
         }
     }       
     
@@ -859,9 +843,11 @@ public final class Server {
         while(left<data.length){
             int right = left + blockSize;  
             byte[] pars_data = Arrays.copyOfRange(data, left, right);
-            int used = blockSize;
+            int used;
             if ((data.length - left)<blockSize){
                 used = data.length - left;                       
+            } else {
+                used = blockSize;
             }
             long hash = RollingHash.computeHash(pars_data);
             String hash2 = RollingHash.computeHash2(pars_data);

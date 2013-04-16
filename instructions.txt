@@ -1,4 +1,25 @@
---------------------Build Instructions--------------------
+--------------------How to Run the Software--------------------
+
+-> Go to the bin directory.
+
+-> To start the server, run 
+	server.bat	... on Windows
+	server.sh	... on Unix, Linux
+If you wish to specify program parameters, open the script in a text editor
+and change the relevant values. 
+
+-> To start the client in terminal, run
+	console_client.bat	... on Windows
+	console_client.sh	... on Unix, Linux
+If you wish to specify program parameters, open the script in a text editor
+and change the relevant values.
+
+-> To start the client in graphical mode, run
+	gui_client.vbs	... on Windows
+	gui_client.sh	... on Unix, Linux
+
+
+--------------------Custom Build Instructions--------------------
 
 1) Download and install Maven 3
 
@@ -13,14 +34,3 @@
 5) In /target subdirectory, you will find the desired jar file 
 	
 	save-the-world-{version}.jar
-
---------------------Example Usage--------------------
-
-	==> To start server (on port no.6666) <==
-java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.Server -home "./databaseDirecotry" -p 6666 -locale EN
-
-	==> To start graphical client <==
-java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.GUIClient
-
-	==> To start command-line client <==
-java -cp save-the-world-1.0-SNAPSHOT.jar cz.filipekt.Client -c 127.0.0.1 -p 6666 -interactive

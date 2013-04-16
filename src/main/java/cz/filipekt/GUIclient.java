@@ -18,7 +18,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.NoSuchAlgorithmException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -102,7 +101,7 @@ public class GUIclient {
      */
     private ResourceBundle messages;
     
-    public GUIclient(){
+    private GUIclient(){
         locale = new Locale("en","US");
         messages = ResourceBundle.getBundle("cz.filipekt.WorldBundle", locale);
     }        
@@ -248,7 +247,6 @@ public class GUIclient {
      */
     private void refreshTree(){
         if ((client != null) && (topNode != null)){
-            db = client.getDB();            
             topNode.removeAllChildren();
             createTreeNodes(topNode);  
             treeModel.reload();
@@ -511,9 +509,12 @@ public class GUIclient {
      * @param top 
      */
     private void createTreeNodes(DefaultMutableTreeNode top){
-        db = client.getDB();        
-        Map<String,DItem> fileMap = db.getFileMap();
-        createTreeNodes2(top, fileMap);
+        Database db1 = client.getDB();        
+        if (db1 != null){
+            db = db1;
+            Map<String,DItem> fileMap = db.getFileMap();
+            createTreeNodes2(top, fileMap);
+        }
     }    
     
     /**
@@ -685,8 +686,6 @@ public class GUIclient {
     */
     private void serveAdd(){
         if (selectedPath == null){            
-//            JOptionPane.showMessageDialog(browserFrame, messages.getString("no_destin_1"), messages.getString("no_destin_2"), JOptionPane.WARNING_MESSAGE);          
-//            return;
             selectedPath = new LinkedList<>();
         }  
         final JFileChooser fc = new JFileChooser();
@@ -721,7 +720,7 @@ public class GUIclient {
             try {
                 client.serveAdd(request, browserFrame);
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
-            } catch (    IOException | NoSuchAlgorithmException ex) {
+            } catch (IOException ex) {
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload_error"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
             }
         }

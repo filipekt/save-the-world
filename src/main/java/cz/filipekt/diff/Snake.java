@@ -1,56 +1,41 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 package cz.filipekt.diff;
 
-import java.util.Collection;
-import java.util.HashSet;
 import java.util.Objects;
 
 /**
- *
+ * A snake as described in [Myers].
  * @author filipekt
  */
-class Snake {
-    static final Snake ZERO = new Snake(Vrchol.ZERO, Vrchol.ZERO, Vrchol.ZERO);    
+class Snake {    
     
-    private final Vrchol start;
-    private final Vrchol mid;
-    private final Vrchol end;
+    /**
+     * Start point.
+     */
+    private final Point start;
+    
+    /**
+     * Middle point.
+     */
+    private final Point mid;
+    
+    /**
+     * End point.
+     */
+    private final Point end;
 
-    Vrchol getStart() {
+    Point getStart() {
         return start;
     }
 
-    Vrchol getMid() {
+    Point getMid() {
         return mid;
     }
 
-    Vrchol getEnd() {
+    Point getEnd() {
         return end;
-    }
-    
-    boolean overlap(Snake s){
-        Collection<Vrchol> points1 = this.getPoints();
-        Collection<Vrchol> points2 = s.getPoints();
-        points1.retainAll(points2);
-        return !points1.isEmpty();
-    }        
-    
-    private Collection<Vrchol> getPoints(){
-        Collection<Vrchol> res = new HashSet<>();
-        res.add(start);
-        Vrchol v = mid;
-        while (v.getX() < end.getX()){
-            res.add(v);
-            v = v.diagonalRight();
-        }
-        res.add(end);
-        return res;
-    }
+    }    
 
-    Snake(Vrchol start, Vrchol mid, Vrchol end) {
+    Snake(Point start, Point mid, Point end) {
         this.start = start;
         this.mid = mid;
         this.end = end;

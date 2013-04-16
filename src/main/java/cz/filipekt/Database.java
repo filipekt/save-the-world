@@ -4,10 +4,6 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import java.io.Externalizable;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -31,7 +27,7 @@ import java.util.TreeSet;
  *  The actual data are not saved here, they are in separate files on disc
  * @author Lifpa
  */
-public final class Database implements Externalizable{
+class Database {
 
     /**
      * Maps filenames to DItems, which is the representation of files </br>
@@ -72,16 +68,7 @@ public final class Database implements Externalizable{
                 }
             }
         }
-    }
-    /**
-     * The upper limit on the number of consecutive versions saved as editational script
-     */
-    private volatile int scriptLimit = 2;
-    
-    /**
-     * Marks the version of serialized state used. 
-     */
-    private static final long serialVersionUID = 2012_12_29L;
+    }      
     
     /**
      * Lock object is used for synchronization.
@@ -91,15 +78,7 @@ public final class Database implements Externalizable{
     /**
      * A linear list view of all the DFiles present in the database
      */
-    private Collection<DFile> regularFiles = new LinkedList<>();
-    
-    /**
-     * Getter for scriptLimit
-     * @return 
-     */
-    int getScriptLimit(){
-        return scriptLimit;
-    }  
+    private Collection<DFile> regularFiles = new LinkedList<>();       
     
     Map<String,DItem> getFileMap(){
         synchronized (lockObject){
@@ -162,9 +141,12 @@ public final class Database implements Externalizable{
      * @param path
      * @return 
      */
-    DItem getItem(List<String> path){          
+    DItem getItem(List<String> path){ 
+        if (path == null){
+            return null;
+        }
         try{
-            synchronized (lockObject){
+            synchronized (lockObject){                
                 DItem current = fileMap.get(path.get(0));
                 for(int i = 1; i<path.size(); i++){
                     current = ((DDirectory)current).getItemMap().get(path.get(i));            
@@ -238,19 +220,7 @@ public final class Database implements Externalizable{
                 return null;
             }
         }
-    }
-
-    
-//    /**
-//     * Returns true if and only if a block with a rolling hash1 value "hash1" is present in the database
-//     * @param hash1
-//     * @return 
-//     */
-//    boolean blockExists(long hash1){
-//        synchronized (lockObject){
-//            return blockSet.contains(hash1);
-//        }
-//    }
+    }    
     
     /**
      * Returns true if and only if a block specified by the two hash <br/>
@@ -265,7 +235,7 @@ public final class Database implements Externalizable{
         }
     }    
 
-    public Database(){}
+    private Database(){}
     Database(Map<String,DItem> file_map, TreeMap<String,DBlock> block_map, TreeSet<Long> blockSet, TreeSet<String> blockSet2){
         this.fileMap = file_map;
         this.blockMap = block_map;   
@@ -367,96 +337,6 @@ public final class Database implements Externalizable{
             }    
         }
     }        
-
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeInt(scriptLimit);
-        if (blockMap == null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(blockMap.size());        
-            for(Map.Entry<String,DBlock> entry : blockMap.entrySet()){
-                out.writeUTF(entry.getKey());            
-                out.writeObject(entry.getValue());
-            }
-        }
-        if (fileMap == null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(fileMap.size());
-            for(Map.Entry<String,DItem> entry : fileMap.entrySet()){
-                out.writeUTF(entry.getKey());
-                out.writeBoolean(entry.getValue().isDir());
-                out.writeObject(entry.getValue());
-            }
-        }
-        if (regularFiles == null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(regularFiles.size());
-            for (DFile df : regularFiles){
-                out.writeObject(df);
-            }
-        }
-        if (blockSet == null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(blockSet.size());
-            for (Long l : blockSet){
-                out.writeLong(l);
-            }
-        }
-        if (blockSet2 == null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(blockSet2.size());
-            for (String s : blockSet2){
-                out.writeUTF(s);
-            }
-        }
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        scriptLimit = in.readInt();
-        int block_map_size = in.readInt();
-        blockMap = new TreeMap<>();        
-        for (int i = 0; i<block_map_size; i++){
-            String key = in.readUTF();
-            DBlock value = (DBlock) in.readObject();
-            blockMap.put(key, value);
-        }
-        int file_map_size = in.readInt();
-        fileMap = new HashMap<>();
-        for (int i = 0; i<file_map_size; i++){
-            String key = in.readUTF();
-            boolean is_dir = in.readBoolean();            
-            if(is_dir){
-                DDirectory value = (DDirectory) in.readObject();
-                fileMap.put(key, value);
-            } else {
-                DFile value = (DFile) in.readObject();
-                fileMap.put(key, value);
-            }
-        }                        
-        int file_list_size = in.readInt();        
-        for (int i = 0; i< file_list_size; i++){
-            DFile df = (DFile) in.readObject();
-            regularFiles.add(df);
-        }        
-        int block_set_size = in.readInt();
-        blockSet = new TreeSet<>();
-        for (int i = 0; i<block_set_size; i++){
-            long val = in.readLong();
-            blockSet.add(val);
-        }
-        int block_set2_size = in.readInt();
-        blockSet2 = new TreeSet<>();
-        for (int i = 0; i< block_set2_size; i++){
-            String val = in.readUTF();
-            blockSet2.add(val);
-        }
-    }
     
     static Serializer<Database> getSerializer(){
         return new DatabaseSerializer();
@@ -466,8 +346,7 @@ public final class Database implements Externalizable{
 
         @Override
         public void write(Kryo kryo, Output output, Database t) {
-            synchronized(t.lockObject){
-                output.writeInt(t.scriptLimit);
+            synchronized(t.lockObject){  
                 if (t.blockMap == null){
                     output.writeInt(0);
                 } else {
@@ -477,7 +356,6 @@ public final class Database implements Externalizable{
                         kryo.writeObject(output, entry.getValue(), DBlock.getSerializer());
                     }
                 }
-                kryo.reset();
                 if (t.blockSet == null){
                     output.writeInt(0);
                 } else {
@@ -485,8 +363,7 @@ public final class Database implements Externalizable{
                     for (Long l : t.blockSet){
                         output.writeLong(l);
                     }
-                }
-                kryo.reset();
+                }                
                 if (t.blockSet2 == null){
                     output.writeInt(0);
                 } else {
@@ -494,8 +371,7 @@ public final class Database implements Externalizable{
                     for (String s : t.blockSet2){
                         output.writeString(s);
                     }
-                }
-                kryo.reset();
+                }   
                 if (t.regularFiles == null){
                     output.writeInt(0);
                 } else {
@@ -504,7 +380,6 @@ public final class Database implements Externalizable{
                         kryo.writeObject(output, df, DFile.getSerializer());
                     }
                 }
-                kryo.reset();
                 if (t.fileMap == null){
                     output.writeInt(0);
                 } else {
@@ -525,8 +400,7 @@ public final class Database implements Externalizable{
 
         @Override
         public Database read(Kryo kryo, Input input, Class<Database> type) {
-            Database res = new Database();
-            res.scriptLimit = input.readInt();
+            Database res = new Database();            
             int blockMapSize = input.readInt();
             res.blockMap = new TreeMap<>();
             for (int i = 0; i<blockMapSize; i++){
@@ -534,25 +408,21 @@ public final class Database implements Externalizable{
                 DBlock val = kryo.readObject(input, DBlock.class, DBlock.getSerializer());
                 res.blockMap.put(key, val);
             }
-            kryo.reset();
             int blockSetSize = input.readInt();
             res.blockSet = new TreeSet<>();
             for (int i = 0; i<blockSetSize; i++){
                 res.blockSet.add(input.readLong());
-            }
-            kryo.reset();
+            }           
             int blockSet2Size = input.readInt();
             res.blockSet2 = new TreeSet<>();
             for (int i = 0; i<blockSet2Size; i++){
                 res.blockSet2.add(input.readString());
-            }
-            kryo.reset();
+            }            
             int fileListSize = input.readInt();
             res.regularFiles = new ArrayList<>();
-            for (int i = 0; i< fileListSize; i++){
+            for (int i = 0; i< fileListSize; i++){                
                 res.regularFiles.add(kryo.readObject(input, DFile.class, DFile.getSerializer()));
             }
-            kryo.reset();
             int fileMapSize = input.readInt();
             res.fileMap = new HashMap<>();
             for (int i = 0; i<fileMapSize; i++){
@@ -597,7 +467,7 @@ class LightDatabase {
         return secondaryHashes.contains(hash);
     }
 
-    public LightDatabase(final TreeSet<Long> primaryHashes, final TreeSet<String> secondaryHashes) {
+    LightDatabase(final TreeSet<Long> primaryHashes, final TreeSet<String> secondaryHashes) {
         this.primaryHashes = primaryHashes;
         this.secondaryHashes = secondaryHashes;
     }        
@@ -610,6 +480,7 @@ class LightDatabase {
 
         @Override
         public void write(Kryo kryo, Output output, LightDatabase t) {
+            kryo.reset();
             if (t.primaryHashes == null){
                 output.writeInt(0, true);
             } else {
@@ -625,7 +496,8 @@ class LightDatabase {
                 for (String s : t.secondaryHashes){
                     output.writeString(s);
                 }
-            }            
+            }
+            kryo.reset();
         }
 
         @Override
@@ -654,11 +526,7 @@ class TooFewVersions extends Exception {}
  * Representation of a file for the use by Database
  * @author Lifpa
  */
-class DFile implements DItem{
-    /**
-     * Marks the version of serialized state used. 
-     */
-    private static final long serialVersionUID = 2012_12_29L;    
+class DFile implements DItem{   
     
     /**
      * The name of this file
@@ -766,25 +634,6 @@ class DFile implements DItem{
     public String toString(){
         return name;
     }
-
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeUTF(name);
-        out.writeInt(versionList.size());
-        for(DVersion dv : versionList){
-            out.writeObject(dv);
-        }
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        name = in.readUTF();
-        int count = in.readInt();
-        versionList = new LinkedList<>();
-        for (int i = 0; i<count; i++){
-            versionList.add((DVersion) in.readObject());
-        }
-    }
     
     static Serializer<DFile> getSerializer(){
         return new DFileSerializer();                
@@ -795,10 +644,14 @@ class DFile implements DItem{
         @Override
         public void write(Kryo kryo, Output output, DFile t) {
             output.writeString(t.name);
-            output.writeInt(t.versionList.size());
-            for (DVersion dv : t.versionList){
-                kryo.writeObject(output, dv, DVersion.getSerializer());
-            }
+            if (t.versionList == null){
+                output.writeInt(0);
+            } else {
+                output.writeInt(t.versionList.size());
+                for (DVersion dv : t.versionList){
+                    kryo.writeObject(output, dv, DVersion.getSerializer());
+                }
+            }            
         }
 
         @Override
@@ -823,11 +676,7 @@ class DFile implements DItem{
  * Representation of a version of a file for the use by Database, DFile
  * @author Lifpa
  */
-class DVersion implements Externalizable{
-    /**
-     * Marks the version of serialized state used. 
-     */
-    private static final long serialVersionUID = 2013_03_30L;
+class DVersion {    
     
     /**
      * The list of blocks of this version - if editational==true, then blocks==null
@@ -939,7 +788,7 @@ class DVersion implements Externalizable{
         this.contentHash = contentHash;
         this.size = size;
     }    
-    public DVersion(){}
+    private DVersion(){}
     
     /**
      * Estimates the total number of bytes this version occupies.
@@ -955,36 +804,6 @@ class DVersion implements Externalizable{
         } else {
             return 0;
         }
-    }
-
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeLong(addedDate.getTime());
-        out.writeUTF(fileName);
-        out.writeInt(blockSize);
-        out.writeBoolean(scriptForm);
-        if (blocks==null){
-            out.writeInt(0);
-        } else {
-            out.writeInt(blocks.size());
-            for(DBlock bl : blocks){
-                out.writeObject(bl);
-            }
-        }
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-            long millis = in.readLong();
-            addedDate = new Date(millis);
-            fileName = in.readUTF();
-            blockSize = in.readInt();
-            scriptForm = in.readBoolean();
-            int count = in.readInt();
-            blocks = new ArrayList<>();
-            for(int i = 0; i<count; i++){                
-                blocks.add((DBlock) in.readObject());
-            }
     }
     
     static Serializer<DVersion> getSerializer(){
@@ -1004,12 +823,11 @@ class DVersion implements Externalizable{
             if (t.blocks == null){
                 output.writeInt(0);
             } else {
-                output.writeInt(t.blocks.size());
-                output.flush();
+                output.writeInt(t.blocks.size());                
                 for (DBlock block : t.blocks){
                     kryo.writeObject(output, block, DBlock.getSerializer());
                 }
-            }
+            }            
         }
 
         @Override
@@ -1038,11 +856,7 @@ class DVersion implements Externalizable{
  * Representation of a block for the use by Database and others
  * @author Lifpa
  */
-class DBlock implements Externalizable{
-    /**
-     * Marks the version of serialized state used. 
-     */
-    private static final long serialVersionUID = 2013_02_26L;
+class DBlock {    
     
     /**
      * The rolling hash value for this block
@@ -1171,27 +985,7 @@ class DBlock implements Externalizable{
         this.size = size;
         this.used = used;
     }
-    public DBlock(){}
-
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeInt(col);
-        out.writeInt(refCount);
-        out.writeInt(size);
-        out.writeInt(used);
-        out.writeLong(hash);
-        out.writeUTF(hash2);
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        col = in.readInt();
-        refCount = in.readInt();
-        size = in.readInt();
-        used = in.readInt();
-        hash = in.readLong();
-        hash2 = in.readUTF();
-    }
+    private DBlock(){}
     
     static Serializer<DBlock> getSerializer(){
         return new DBlockSerializer();
@@ -1201,10 +995,10 @@ class DBlock implements Externalizable{
 
         @Override
         public void write(Kryo kryo, Output output, DBlock t) {
-            output.writeInt(t.col, true);
-            output.writeInt(t.refCount, true);
-            output.writeInt(t.size, true);
-            output.writeInt(t.used, true);
+            output.writeInt(t.col);
+            output.writeInt(t.refCount);
+            output.writeInt(t.size);
+            output.writeInt(t.used);
             output.writeLong(t.hash);
             output.writeString(t.hash2);            
         }
@@ -1212,10 +1006,10 @@ class DBlock implements Externalizable{
         @Override
         public DBlock read(Kryo kryo, Input input, Class<DBlock> type) {
             DBlock res = new DBlock();
-            res.col = input.readInt(true);
-            res.refCount = input.readInt(true);
-            res.size = input.readInt(true);
-            res.used = input.readInt(true);
+            res.col = input.readInt();
+            res.refCount = input.readInt();
+            res.size = input.readInt();
+            res.used = input.readInt();
             res.hash = input.readLong();
             res.hash2 = input.readString();
             return res;
@@ -1224,7 +1018,7 @@ class DBlock implements Externalizable{
     }
 }
 
-interface DItem extends Externalizable{
+interface DItem {
     boolean isDir();   
     String getName();
 }
@@ -1233,11 +1027,7 @@ interface DItem extends Externalizable{
  * Representation of a directory for the use by Database and others
  * @author Lifpa
  */
-class DDirectory implements DItem {
-    /**
-     * Marks the version of serialized state used. 
-     */
-    private static final long serialVersionUID = 2012_12_29L;    
+class DDirectory implements DItem {    
 
     /**
      * The name of this directory
@@ -1268,36 +1058,7 @@ class DDirectory implements DItem {
         this.itemMap = new HashMap<>();
     }
     
-    public DDirectory(){}
-
-    @Override
-    public void writeExternal(ObjectOutput out) throws IOException {
-        out.writeUTF(name);
-        out.writeInt(itemMap.size());
-        for(Map.Entry<String,DItem> entry : itemMap.entrySet()){
-            out.writeUTF(entry.getKey());
-            out.writeBoolean(entry.getValue().isDir());
-            out.writeObject(entry.getValue());
-        }
-    }
-
-    @Override
-    public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
-        name = in.readUTF();
-        int count = in.readInt();
-        itemMap = new HashMap<>();
-        for (int i = 0; i<count; i++){
-            String key = in.readUTF();
-            boolean is_dir = in.readBoolean();
-            if(is_dir){
-                DDirectory value = (DDirectory) in.readObject();
-                itemMap.put(key, value);
-            } else {
-                DFile value = (DFile) in.readObject();
-                itemMap.put(key, value);
-            }
-        }
-    }
+    private DDirectory(){}
     
     static Serializer<DDirectory> getSerializer(){
         return new DDirectorySerializer();
@@ -1312,8 +1073,7 @@ class DDirectory implements DItem {
             for(Map.Entry<String,DItem> entry : t.itemMap.entrySet()){
                 output.writeString(entry.getKey()); 
                 boolean isDir = entry.getValue().isDir();
-                output.writeBoolean(isDir);
-                output.flush();
+                output.writeBoolean(isDir);                
                 if (isDir){
                     kryo.writeObject(output, entry.getValue(), DDirectory.getSerializer());
                 } else {

@@ -1,7 +1,3 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 package cz.filipekt.diff;
 
 import com.esotericsoftware.kryo.Kryo;
@@ -9,16 +5,23 @@ import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
- *
+ * Represents a patch containing the operations needed to change
+ * a file A into file B.
  * @author filipekt
  */
-public class EditScript {            
-    private final List<Operation> operations;
+public class EditScript {     
     
+    /**
+     * Sorted sequence of operations that would turn file A into file B.
+     */
+    private final List<Operation> operations;     
+    
+    /**
+     * Size of the file B , in bytes.
+     */
     private final int sizeOfB;   
 
     private EditScript(List<Operation> operations, int sizeOfB) {
@@ -26,7 +29,17 @@ public class EditScript {
         this.sizeOfB = sizeOfB;
     }
     
+    /**
+     * Applies the operations contained in this EditScript to the byte array 
+     * specified in parameters (== contents of file A). The result is the 
+     * contents of file B.
+     * @param src Contents of file A
+     * @return Contents of file B
+     */
     public byte[] applyTo(byte[] src){
+        if ((src == null) || (operations == null)){
+            return null;
+        }
         byte[] res = new byte[sizeOfB];
         int isrc = 0;
         int ires = 0;
@@ -44,45 +57,44 @@ public class EditScript {
             }
         }
         return res;
-    }
+    }           
     
-    public static EditScript createScript(byte[] A, byte[] B){
-        return createScript(A, B, 0);
-    }
-    
-    public static EditScript createScript(byte[] A, byte[] B, int sizeLimit){
-        Myers myers = new Myers(A, B, sizeLimit);
-//        List<Vector> snapshots = myers.goThrough();       
-//        List<Snake> snakes = myers.reconstructPath(snapshots);
-        List<Snake> snakes = myers.compare(0, A.length, 0, B.length);
-        if (snakes != null){
-            return EditScript.fromSnakes(snakes, A, B);
-        } else {
+    /**
+     * Compares two input byte arrays and returns an edit script, not neccesarilly
+     * minimal, but close. The edit script contains instructions that transform 
+     * array A into array B. If the number of instructions in the script is greater
+     * than "sizeLimit", no script is created and null is returned.
+     * @param A The script will contain instructions operating on this array.
+     * @param B This array will be the result of applying the script to array A.
+     * @param sizeLimit If greater than 0, a script longer than this non-zero value is never 
+     * returned. Length of a script means the number of edit operations conatined in the script.
+     * @param heuristics If true, heuristics may be used and the returned script is not guaranteed to be 
+     * minimal. However, the computation runs considerably faster.
+     * @return The edit script describing how array B differs from array A.
+     */
+    public static EditScript createScript(byte[] A, byte[] B, int sizeLimit, boolean heuristics){
+        if ((A == null) || (B == null) || (sizeLimit < 0)){
             return null;
         }
-    }
-
-    private static EditScript fromSnakes(List<Snake> snakes, byte[] A, byte[] B){        
-        List<Operation> ops = new ArrayList<>();                                            
-        for (Snake s : snakes){
-            Vrchol direction = s.getMid().minus(s.getStart());                    
-            if (direction.equals(Vrchol.DOWN)){
-                ops.add(new Insert(B[s.getStart().getY()]));
-            } else if (direction.equals(Vrchol.RIGHT)){
-                ops.add(new Delete());
-            }
-            Vrchol tail = s.getEnd().minus(s.getMid());
-            if (!tail.equals(Vrchol.ZERO)){                                            
-                ops.add(new Diagonal(tail.getX()));
-            }
-        }
-        return new EditScript(ops, B.length);
-    }
+        Myers myers = new Myers(A, B, sizeLimit);
+        List<Operation> snakes = myers.compare(heuristics);
+        if ((snakes == null) || ((sizeLimit > 0) && (snakes.size() > sizeLimit))){
+            return null;
+        }       
+        return new EditScript(snakes, B.length);                      
+    }         
     
-    public static Serializer<EditScript> getSerializer(){
+    /**
+     * Used for serialization by the Kryo framework.
+     * @return 
+     */
+    public static Serializer<EditScript> getSerializer(){        
         return new EditScriptSerializer();
     }
 
+    /**
+     * Used for serialization by the Kryo framework.
+     */
     private static class EditScriptSerializer extends Serializer<EditScript>{
 
         @Override
@@ -133,6 +145,5 @@ public class EditScript {
             }
             return new EditScript(res, bsize);
         }
-
     }
 }

@@ -1,0 +1,1 @@
+java -cp save-the-world.jar cz.filipekt.GUIclient

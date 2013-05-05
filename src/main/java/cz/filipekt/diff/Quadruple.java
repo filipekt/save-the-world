@@ -2,7 +2,7 @@ package cz.filipekt.diff;
 
 /**
  * A simple generic quadruple.
- * @author filipekt
+ * @author Tomas Filipek
  */
 class Quadruple <A,B,C,D> {
     

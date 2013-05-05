@@ -3,19 +3,19 @@ package cz.filipekt.diff;
 /**
  * Represents a single operation on array A that would change it to be more
  * similar to array B.
- * @author filipekt
+ * @author Tomas Filipek
  */
 interface Operation {}
 
 /**
  * A single byte deletion from array A.
- * @author filipekt
+ * @author Tomas Filipek
  */
 class Delete implements Operation{}
         
 /**
  * A single byte insertion into array A.
- * @author filipekt
+ * @author Tomas Filipek
  */        
 class Insert implements Operation{
     private final byte data;

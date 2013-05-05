@@ -3,19 +3,22 @@ package cz.filipekt;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
 /**
- *
- * @author Lifpa
+ * Contains various static helper methods.
+ * @author Tomas Filipek
  */
 class ServerUtils {        
                     
@@ -72,8 +75,69 @@ class ServerUtils {
     }    
     
     /**
+     * Computes the strong hash for "inData", padding the input data with zero's at the end up to 
+     * "capacity", if needed.
+     * @param in_data
+     * @return Hexadecimal SHA-256 hash for "in_data"
+     */
+    static String computeStrongHash(List<Byte> in_data, int capacity) {
+        byte[] data2 = new byte[capacity];
+        int i = 0;
+        for(byte b : in_data){
+           data2[i++] = b;
+           if (i >= capacity){
+               break;
+           }
+        }
+        while (i<capacity){
+           data2[i++] = (byte)0;
+        }
+        return ServerUtils.computeStrongHash(data2);
+    }  
+    
+    /**
+     * Computes the strong hash for "inData"
+     * @param in_data
+     * @return 
+     */
+    static String computeStrongHash(byte[] in_data) {
+        if ((in_data == null) || (in_data.length == 0)){
+            return "";
+        }
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            md.update(in_data);         
+            byte[] h = md.digest();
+            return new BigInteger(h).toString(16);       
+        } catch (NoSuchAlgorithmException ex){
+            System.out.println(ex.getLocalizedMessage());
+            return "";
+        }
+    }
+       
+    /**
+     * Computes the strong hash of data on positions "from" - "to" (exclusive).
+     * Remaining bytes up to "windowSize" are filled with 0s.
+     * @param data
+     * @param windowSize 
+     * @param from
+     * @param to
+     * @return 
+     */
+    static String computeStrongHash(byte[] data, int windowSize, int from, int to) {
+        byte[] completeData = new byte[windowSize];
+        int i = 0;
+        for (int j = from; j < to; j++){
+            completeData[i++] = data[j];
+        }
+        while (i < windowSize){
+            completeData[i++] = (byte)0;
+        }
+        return ServerUtils.computeStrongHash(completeData);
+    }    
+    
+    /**
      * Loads the contents of the "block" from disc and return it as array of bytes.
-     * Only valid bytes are returned, ie. the padding 0s are not included.
      * @param block
      * @return
      * @throws IOException 
@@ -114,27 +178,7 @@ class ServerUtils {
             i += blockData.length;
         }
         return fileContent;
-    }                
-    
-    /**
-     * Determines the optimal block size used for storing a file's contents.
-     * @param fileSize The size of a file.
-     * @return 
-     */
-    static int getBlockSize(int fileSize){
-        int c = 16;
-        switch(Integer.toHexString(fileSize).length()){
-            case 1:
-            case 2:
-                return c;           // 16
-            case 3:
-                return c*16;        // 256
-            case 4:
-                return c*16*16;     // 4096
-            default:
-                return c*16*16*16;  // 65536
-        }      
-    }    
+    }                          
     
     /**
      * Parses the path "fname" into a list of all the items on the path. File separator used: / or \\
@@ -248,6 +292,11 @@ class ServerUtils {
         return false;
     }
     
+    /**
+     * Checks whether the input String contains a String representation of a long variable.
+     * @param s
+     * @return 
+     */
     static boolean isLong(String s){
         try{
             Long.parseLong(s);
@@ -290,7 +339,7 @@ class ServerUtils {
      * @return Returns the position in the hash collision list
      * @throws IOException 
      */
-    static int saveBlock(byte[] bytes, long hash, String homeDir) throws IOException{
+    static int saveBlock(byte[] bytes, long hash, String homeDir, int validBytes) throws IOException{
         boolean hotovo = false;
         int v = 0;
         while(!hotovo){
@@ -302,8 +351,9 @@ class ServerUtils {
             } else {
                 Files.createFile(p);
                 try (BufferedOutputStream bos = new BufferedOutputStream(Files.newOutputStream(p))){
-                    for (byte b : bytes){
-                        bos.write((int)b + 128);
+                    for (int i = 0; i<validBytes; i++){
+                        int b = (int)bytes[i] + 128;
+                        bos.write(b);
                     }
                 }
                 hotovo = true;
@@ -312,8 +362,14 @@ class ServerUtils {
         return v;
     }    
     
-    static void deleteBlock(String key, String home_dir) throws IOException{
-        Path p = Paths.get(home_dir,key);
+    /**
+     * Deletes a file containing a block contents from disc.
+     * @param name
+     * @param home_dir
+     * @throws IOException 
+     */
+    static void deleteBlock(String name, String home_dir) throws IOException{
+        Path p = Paths.get(home_dir,name);
         Files.delete(p);
     }
             

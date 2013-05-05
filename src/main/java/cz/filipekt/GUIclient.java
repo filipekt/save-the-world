@@ -52,7 +52,7 @@ import javax.swing.tree.TreeSelectionModel;
 
 /**
  *  This class is responsible of creating the GUI for the client-side application.
- * @author filipekt
+ * @author Tomas Filipek
  */
 public class GUIclient {
     public static void main(String args[]){
@@ -149,8 +149,8 @@ public class GUIclient {
         c.gridx = 0;
         c.gridy = 2;
         pane.add(langLabel,c);
-        
-        final JComboBox langBox = new JComboBox(new String[]{"EN","CZ"});        
+          
+        final JComboBox<String> langBox = new JComboBox<>(new String[]{"EN","CZ"});
         c.gridx = 1;
         c.gridy = 2;
         pane.add(langBox,c);
@@ -167,7 +167,7 @@ public class GUIclient {
                     connect(compField.getText(), Integer.parseInt(portField.getText()), locale);
                     createAndShowBrowserFrame();
                 } catch (NumberFormatException | IOException ex) {                    
-                    JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(browserFrame, messages.getString("conn_fail") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
                     System.exit(0);
                 }
             }
@@ -670,12 +670,10 @@ public class GUIclient {
                 node.add(child);
                 createTreeNodes2(child, ((DDirectory)item).getItemMap());
             } else {
-                DefaultMutableTreeNode fileNode = new DefaultMutableTreeNode(item, true);
-                if (((DFile)item).getVersionList() != null){
-                    for (DVersion version : ((DFile)item).getVersionList()){
-                        fileNode.add(new DefaultMutableTreeNode(version, false));
-                    }
-                }
+                DefaultMutableTreeNode fileNode = new DefaultMutableTreeNode(item, true);                
+                for (DVersion version : ((DFile)item).getVersionList()){
+                    fileNode.add(new DefaultMutableTreeNode(version, false));
+                }                
                 node.add(fileNode);
             }
         }
@@ -718,7 +716,7 @@ public class GUIclient {
             request.add(source.toString());
             request.add(target);
             try {
-                client.serveAdd(request, browserFrame);
+                client.serveAdd(request, browserFrame, true);
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
             } catch (IOException ex) {
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("upload_error"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
@@ -788,12 +786,6 @@ public class GUIclient {
                 createAndShowProgessFrame();
             }
         });                        
-        if (!Files.isDirectory(destination)){
-            int answer = JOptionPane.showConfirmDialog(browserFrame, messages.getString("replace_1"), messages.getString("replace_2"), JOptionPane.YES_NO_CANCEL_OPTION);
-            if (answer != JOptionPane.YES_OPTION){
-                return;
-            } 
-        }
         LinkedList<String> selectedPathStrings = new LinkedList<>();
         for(TreeNode tn : selectedPath){
             selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
@@ -817,7 +809,9 @@ public class GUIclient {
             }
         } catch (FileNotFoundException ex){
             JOptionPane.showMessageDialog(browserFrame, messages.getString("no_source"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-        } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+        } catch (WrongVersionNumber ex){
+            JOptionPane.showMessageDialog(browserFrame, messages.getString("wrong_version"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+        } catch (IOException | ClassNotFoundException ex){
             JOptionPane.showMessageDialog(browserFrame, messages.getString("exceptional_state") + " " + ex.getLocalizedMessage(), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
         }        
     }    

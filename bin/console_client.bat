@@ -7,7 +7,7 @@ set PORT=6666
 :: Possible values of locale: EN , CZ
 set LOCALE=EN
 
-:: If no value is set, the client expects a batch job, so no control output is given.
-set INTERACTIVE=-interactive
+:: Path to the jar containing the application
+set PATH_TO_JAR=../target/save-the-world.jar
 
-java -cp save-the-world.jar cz.filipekt.Client -c %COMP% -p %PORT% -locale %LOCALE% %INTERACTIVE%
+java -cp %PATH_TO_JAR% cz.filipekt.Client -c %COMP% -p %PORT% -locale %LOCALE% -interactive

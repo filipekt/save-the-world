@@ -1,4 +1,17 @@
+--------------------Build Instructions--------------------
+1) Download and install Maven 3
+
+2) Make sure the Maven executables are on the PATH system variable
+
+3) Go to the save-the-world directory
+
+4) Run this command:	
+	mvn clean package
+
+5) "target" subdirectory gets created. It contains the built application.
+	
 --------------------How to Run the Software--------------------
+-> Build the software.
 
 -> Go to the bin directory.
 
@@ -18,19 +31,3 @@ and change the relevant values.
 	gui_client.vbs	... on Windows
 	gui_client.sh	... on Unix, Linux
 
-
---------------------Custom Build Instructions--------------------
-
-1) Download and install Maven 3
-
-2) Make sure the Maven executables are on the PATH system variable
-
-3) Go to the save-the-world directory
-
-4) Run this command:
-	
-	mvn clean package
-
-5) In /target subdirectory, you will find the desired jar file 
-	
-	save-the-world-{version}.jar

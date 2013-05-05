@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * A snake as described in [Myers].
- * @author filipekt
+ * @author Tomas Filipek
  */
 class Snake {    
     

@@ -31,20 +31,11 @@ import javax.swing.JOptionPane;
 
 /**
  * Representation of the client that connects to server
- * @author Lifpa
+ * @author Tomas Filipek
  */
 public class Client {
     public static void main(String[] args){        
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        start(args, br);
-    }
-    
-    /**
-     * Contains all the localized messages that are shown to the user.
-     */
-    private ResourceBundle messages;         
-    
-    private static void start(String[] args, BufferedReader br){
         try {                        
             String[] args2;
             String comp;
@@ -113,44 +104,39 @@ public class Client {
     }
     
     /**
-     * Input stream from server
+     * Contains all the localized messages that are shown to the user.
      */
-    private InputStream in_s;        
-    
-    /**
-     * Output stream to server
-     */
-    private OutputStream out_s;    
+    private final ResourceBundle messages;             
     
     /**
      * Standard input for client
      */
-    private BufferedReader stdin;
+    private final BufferedReader stdin;
     
     /**
      * Standard output for client
      */
-    private PrintStream stdout;      
+    private final PrintStream stdout;      
     
     /**
      * Socket used to communicate with server
      */
-    private Socket socket;
+    private final Socket socket;
     
     /**
      * Base class of the Kryo framework for fast (de-)serialization of objects
      */
-    private Kryo kryo;
+    private final Kryo kryo;
     
     /**
      * Specific output stream for the use by Kryo framework
      */
-    private Output kryo_output;
+    private final Output kryo_output;
     
     /**
      * Specific input stream for the use by Kryo framework
      */
-    private Input kryo_input;  
+    private final Input kryo_input;  
     
     /**
      * Marks whether the program is expecting a batch input or not, so that 
@@ -158,11 +144,11 @@ public class Client {
      */
     private final boolean interactive;
     
-    public Client(String comp, int port, BufferedReader stdin, Locale locale, PrintStream stdout, boolean interactive) throws IOException{
+    Client(String comp, int port, BufferedReader stdin, Locale locale, PrintStream stdout, boolean interactive) throws IOException{
         InetAddress addr = InetAddress.getByName(comp);
         socket = new Socket(addr,port);        
-        in_s = socket.getInputStream();
-        out_s = socket.getOutputStream();
+        InputStream in_s = socket.getInputStream();
+        OutputStream out_s = socket.getOutputStream();
         kryo = new Kryo(null); 
         kryo.setAutoReset(true);
         kryo_output = new Output(out_s);        
@@ -174,7 +160,7 @@ public class Client {
     }
        
     /**
-     * Attempts to serve the client's requests
+     * Attempts to serve the client's requests, until an "exit" request is encountered.
      */
     private void work(){
         boolean pokr = true;
@@ -184,7 +170,7 @@ public class Client {
     }    
     
     /**
-     * Stops the client and shuts all connections down
+     * Shuts down all the connections to server.
      * @throws IOException 
      */
     void end() throws IOException{
@@ -214,7 +200,6 @@ public class Client {
             if (interactive){
                 if(request.isEmpty()){
                     stdout.println(messages.getString("noop_entered"));
-                    throw new IOException();
                 }
             }
             request = ServerUtils.concatQuotes(request);
@@ -251,7 +236,7 @@ public class Client {
                     request.add(name);
                 }
                 try{                            
-                    serveAdd(request, null);
+                    serveAdd(request, null, true);
                 } catch (IOException ex){
                     stdout.println(messages.getString("attempt_failed"));
                 }
@@ -274,7 +259,9 @@ public class Client {
                     }
                     serveGet(request);
                     break;
-                } catch (IOException | ClassNotFoundException | WrongVersionNumber ex){
+                } catch (WrongVersionNumber ex){
+                    stdout.println(messages.getString("wrong_version"));
+                } catch (IOException | ClassNotFoundException ex){
                     stdout.println(messages.getString("attempt_failed"));
                 }
                 break;            
@@ -316,13 +303,23 @@ public class Client {
         return true;
     }
     
+    /**
+     * Sends a special request to the server stating that the client is ready to </br>
+     * terminate the connection. Its effect is equal to that of user request "exit".
+     */
     void terminateConnection(){
         try {
             kryo.writeObject(kryo_output, Requests.END);            
-        } catch (Exception ex){}            
+        } catch (Exception ignored){}            
     }
-
     
+    /**
+     * Prints the specified "question" to standard output and returns the </br>
+     * user's answer - either consent or disapproval.
+     * @param question The question with only possible answers yes/no.
+     * @return
+     * @throws IOException 
+     */
     private boolean askUser(String question) throws IOException{        
         boolean answered = false;
         while (!answered){
@@ -340,16 +337,25 @@ public class Client {
         return false;
     }
     
+    /**
+     * Takes care of a get request. Checks whether the requested file is present </br>
+     * on server, whether the local target is directory when downloading a directory.. </br>    
+     * The actual transmission is handed to other methods - receiveVersion(..), ...
+     * @param request
+     * @throws IOException
+     * @throws ClassNotFoundException
+     * @throws WrongVersionNumber 
+     */
     private void serveGet(List<String> request) throws IOException, ClassNotFoundException, WrongVersionNumber{
         Database db = getDB();
         if (request.size() < 3){
             return;
         }
-        final boolean zip = (request.get(0) != null) && (request.get(0).equals("get_zip"));
-        final String source = request.get(1);
-        final List<String> source2 = ServerUtils.parseName(source);
-        final String destination = request.get(2);
-        final Path destination2 = Paths.get(destination);
+        boolean zip = (request.get(0) != null) && (request.get(0).equals("get_zip"));
+        String source = request.get(1);
+        List<String> source2 = ServerUtils.parseName(source);
+        String destination = request.get(2);
+        Path destination2 = Paths.get(destination);
         Integer versionNumber = null;
         if (request.size() >= 4){
             try {
@@ -359,11 +365,6 @@ public class Client {
         if (!zip && !isCompatible(source, destination2, db)){            
             stdout.println(messages.getString("dir_into_file"));
             return;
-        }
-        if (Files.exists(destination2) && Files.isRegularFile(destination2)){            
-            if (!askUser(messages.getString("replace_1"))){
-                return;
-            }
         }
         DItem item = db.getItem(source2);
         boolean res;
@@ -378,7 +379,18 @@ public class Client {
             }
         }
     }
-        
+       
+    /**
+     * Operates the data transmission during the "get" request.
+     * @param sourceFile Path in the server database to the requested file.
+     * @param versionNumber If not null, marks the version number of the requested version. If null, the latest version is used.
+     * @param zip If set, a zipped archive is requested instead of raw data.
+     * @param db A copy of the server database.
+     * @return The contents of the recieved file.
+     * @throws IOException
+     * @throws ClassNotFoundException
+     * @throws WrongVersionNumber 
+     */
     int[] serveGetBin(List<String> sourceFile, Integer versionNumber, final boolean zip, Database db) throws IOException, ClassNotFoundException, WrongVersionNumber{       
         if (db == null){
             db = getDB();
@@ -398,45 +410,48 @@ public class Client {
         if(versionNumber != null){
             verze = versionNumber;
         } else if (!item.isDir()) {
-            verze = db.findFile(sourceFile).getVersionList().size() - 1;
+            verze = db.findFile(sourceFile).getVersionCount() - 1;
         } else {
             verze = 0;
         }
-        if((!item.isDir()) && (verze >= db.findFile(sourceFile).getVersionList().size())){
+        if((!item.isDir()) && (verze >= db.findFile(sourceFile).getVersionCount())){
             throw new WrongVersionNumber();
         }
         kryo_output.writeInt(verze);
-        kryo_output.flush();
-
-        byte[] data;
-        if (!zip) {
-            data = kryo.readObject(kryo_input, byte[].class);
-            int c; 
-            int[] res = new int[data.length];
-            int i = 0;
-            for(byte b : data){
-                c = ((int)b) + 128;
-                res[i++] = c;
-            }        
-            return res;
-        } else {            
-            byte[] src = kryo.readObject(kryo_input, byte[].class);
-            int[] res;
-            try (ByteArrayInputStream is = new ByteArrayInputStream(src)){
-                int c;
-                List<Integer> list = new ArrayList<>();
-                while ((c=is.read())!=-1){
-                    list.add(c);
-                }                
-                res = new int[list.size()];
+        kryo_output.flush();        
+        boolean versionPresent = kryo_input.readBoolean();        
+        if (versionPresent){        
+            byte[] data;
+            if (!zip) {
+                data = kryo.readObject(kryo_input, byte[].class);
+                int c; 
+                int[] res = new int[data.length];
                 int i = 0;
-                for (int val : list){
-                    res[i++] = val;
-                }                
+                for(byte b : data){
+                    c = ((int)b) + 128;
+                    res[i++] = c;
+                }        
+                return res;
+            } else {            
+                byte[] src = kryo.readObject(kryo_input, byte[].class);
+                int[] res;
+                try (ByteArrayInputStream is = new ByteArrayInputStream(src)){
+                    int c;
+                    List<Integer> list = new ArrayList<>();
+                    while ((c=is.read())!=-1){
+                        list.add(c);
+                    }                
+                    res = new int[list.size()];
+                    int i = 0;
+                    for (int val : list){
+                        res[i++] = val;
+                    }                
+                }
+                return res;
             }
-            return res;
-        }
-        
+        } else {
+            throw new WrongVersionNumber();
+        }        
     }
 
     /**
@@ -560,7 +575,7 @@ public class Client {
     }    
     
     /**
-     * Downloads a valid instance of Database from the server
+     * Downloads a valid instance of Database from the server.
      * @return 
      */
     Database getDB() {        
@@ -569,12 +584,22 @@ public class Client {
         return kryo.readObject(kryo_input, Database.class, Database.getSerializer());                                   
     }
     
+    /**
+     * Downloads a light version of Database from the server.    
+     * @return 
+     */
     private LightDatabase getLightDatabase() {        
         kryo_output.writeString("get_light_db");                
         kryo_output.flush();        
         return kryo.readObject(kryo_input, LightDatabase.class, LightDatabase.getSerializer());                     
     }    
     
+    /**
+     * Checks whether the specified "target" path points to an existing </br>
+     * file/directory on server.
+     * @param target
+     * @return 
+     */
     private boolean itemExistsOnServer(Collection<String> target){
         if (target == null){
             throw new IllegalArgumentException();
@@ -589,9 +614,11 @@ public class Client {
     /**
      * Serves the user request of type "add" , which adds a new file/directory into the system
      * @param request
-     * @throws PrenosSeNepovedl 
+     * @param frame The JFrame used to show info/error messages. If null, standard ouput is used.
+     * @param checkSize If set, the server checks whether the reserved space is not exceeded.
+     * @throws IOException 
      */
-    void serveAdd(List<String> request, JFrame frame) throws IOException {                        
+    void serveAdd(List<String> request, JFrame frame, boolean checkSize) throws IOException {                        
         String fname = request.get(1);
         Collection<String> target = ServerUtils.parseName(request.get(2));
         Path file = Paths.get(fname);
@@ -623,18 +650,21 @@ public class Client {
             } else {
                 kryo.writeObject(kryo_output, Requests.CREAT_FILE);                
                 kryo_output.writeLong(Files.size(file));
-            }            
+            }
+            kryo_output.writeBoolean(checkSize);
             kryo.writeObject(kryo_output, target.toArray(new String[0]));
             kryo_output.flush();
-            boolean enough_space = kryo_input.readBoolean();
-            if(!enough_space){
-                if (frame == null){
-                    stdout.println(messages.getString("not_enough_space"));
-                    throw new IOException();   
-                } else {
-                    JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                    throw new IOException();
-                }                
+            if (checkSize){
+                boolean enough_space = kryo_input.readBoolean();
+                if(!enough_space){
+                    if (frame == null){
+                        stdout.println(messages.getString("not_enough_space"));
+                        throw new IOException();   
+                    } else {
+                        JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                        throw new IOException();
+                    }                
+                }
             }
         }                                 
         if(Files.isDirectory(file)){
@@ -644,39 +674,46 @@ public class Client {
                     newRequest.add(request.get(0));
                     newRequest.add(p.toAbsolutePath().toString());
                     newRequest.add(request.get(2) + "/" + p.getFileName().toString());
-                    serveAdd(newRequest, frame);
+                    serveAdd(newRequest, frame, false);
                 }
             }
             return;
         }                                                
         byte[] fileContents = Files.readAllBytes(file);        
         if (fileContents != null){
-            int vel_bloku = ServerUtils.getBlockSize(fileContents.length);
             kryo.writeObject(kryo_output, Requests.CHECK_CHANGES);
             kryo.writeObject(kryo_output, target.toArray(new String[0]));                
-            String contentHash = RollingHash.computeHash2(fileContents);
+            String contentHash = ServerUtils.computeStrongHash(fileContents);
             kryo_output.writeString(contentHash);
             kryo_output.flush();
             boolean changed = kryo_input.readBoolean();
             if (changed){
                 kryo.writeObject(kryo_output, Requests.CREAT_VERS);
+                kryo_output.writeBoolean(checkSize);
                 kryo_output.writeLong((long)fileContents.length);
                 kryo_output.flush();
-                boolean enough_space = kryo_input.readBoolean();
-                if(enough_space){
+                int vel_bloku = kryo_input.readInt();
+                if (checkSize){
+                    boolean enough_space = kryo_input.readBoolean();
+                    if(enough_space){
+                        kryo.writeObject(kryo_output, target.toArray(new String[0]));
+                        kryo_output.writeString(contentHash);                                        
+                        windowLoop(fileContents, vel_bloku); 
+                        kryo_input.readBoolean(); //server-side finished
+                    } else {
+                        if (frame == null){
+                            stdout.println(messages.getString("not_enough_space"));
+                            throw new IOException();    
+                        } else {
+                            JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
+                            throw new IOException();
+                        }
+                    }
+                } else {
                     kryo.writeObject(kryo_output, target.toArray(new String[0]));
-                    kryo_output.writeInt(vel_bloku);                    
                     kryo_output.writeString(contentHash);                                        
                     windowLoop(fileContents, vel_bloku); 
                     kryo_input.readBoolean(); //server-side finished
-                } else {
-                    if (frame == null){
-                        stdout.println(messages.getString("not_enough_space"));
-                        throw new IOException();    
-                    } else {
-                        JOptionPane.showMessageDialog(frame, messages.getString("not_enough_space"), messages.getString("error"), JOptionPane.ERROR_MESSAGE);
-                        throw new IOException();
-                    }
                 }
             }
         }
@@ -779,8 +816,8 @@ public class Client {
 //          All the bytes that are left must be now sent.
             boolean finished = false;
             if(not_matched.size() < block_size){
-                long hash = RollingHash.computeHash(not_matched, block_size);
-                String hexHash2 = RollingHash.computeHash2(not_matched, block_size);                               
+                long hash = RollingHash.computeHash(not_matched, not_matched.size());
+                String hexHash2 = ServerUtils.computeStrongHash(not_matched, not_matched.size());
                 if ((ld.blockExists1(hash)) && (ld.blockExists2(hexHash2))){
                     kryo_output.writeString("hash");
                     kryo_output.writeLong(hash);
@@ -809,7 +846,7 @@ public class Client {
      * Serves the user request of type "delete", which deletes a version of a file,
      * unless the version is the only one present.
      * @param request
-     * @return 
+     * @return Whether the deletion succeded.
      */
     private boolean serveDelete(List<String> request){
         if ((request == null) || (request.size() != 3)){

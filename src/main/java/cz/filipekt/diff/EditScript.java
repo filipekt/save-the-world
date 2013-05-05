@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Represents a patch containing the operations needed to change
  * a file A into file B.
- * @author filipekt
+ * @author Tomas Filipek
  */
 public class EditScript {     
     
@@ -72,11 +72,11 @@ public class EditScript {
      * minimal. However, the computation runs considerably faster.
      * @return The edit script describing how array B differs from array A.
      */
-    public static EditScript createScript(byte[] A, byte[] B, int sizeLimit, boolean heuristics){
+    public static EditScript createScript(byte[] A, byte[] B, int sizeLimit, boolean heuristics, int tooExpensive){
         if ((A == null) || (B == null) || (sizeLimit < 0)){
             return null;
         }
-        Myers myers = new Myers(A, B, sizeLimit);
+        Myers myers = new Myers(A, B, sizeLimit, tooExpensive);
         List<Operation> snakes = myers.compare(heuristics);
         if ((snakes == null) || ((sizeLimit > 0) && (snakes.size() > sizeLimit))){
             return null;

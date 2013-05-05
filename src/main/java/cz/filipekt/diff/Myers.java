@@ -5,7 +5,6 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-
 /**
  * Contains the implementation of the Myers' diff algorithm and 
  * a simple heuristic by Paul Eggert.
@@ -34,18 +33,21 @@ class Myers {
      * When constructing longest reaching paths on each diagonal and the distance 
      * grows over this limit, search is stopped and a suboptimal middle snake is returned.
      */
-    private final int tooExpensive = 1024;   
+    private final int tooExpensive;   
     
     /**
      * Intermediate result during adding up the script size.
      */
     private int size = 0;
 
-    Myers(byte[] A, byte[] B, int sizeLimit) {
+    Myers(byte[] A, byte[] B, int sizeLimit, int tooExpensive) {
         this.A = A;
         this.B = B;
-        this.sizeLimit = sizeLimit;        
-    }   
+        this.sizeLimit = sizeLimit;
+        this.tooExpensive = tooExpensive;
+    }
+
+    
         
     /**
      * Finds a middle snake in the edit graph.

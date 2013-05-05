@@ -17,7 +17,7 @@ import java.util.logging.Logger;
 
 /** 
  *  Deals with automatization of operations.
- * @author Lifpa
+ * @author Tomas Filipek
  */
 public class Scheduler {    
     public static void main(String[] args){
@@ -58,7 +58,7 @@ public class Scheduler {
             return;
         }
         try {
-            Scheduler scheduler = new Scheduler(uri, port2, time2, input2, locale, messages, count2);
+            Scheduler scheduler = new Scheduler(uri, port2, time2, input2, locale, count2);
             scheduler.loadCommands();
             scheduler.work();
         } catch (Exception ex){
@@ -66,13 +66,12 @@ public class Scheduler {
         }
     }
 
-    private Scheduler(String uri, int port, int time, Path input, Locale locale, ResourceBundle messages, long count) {
+    private Scheduler(String uri, int port, int time, Path input, Locale locale, long count) {
         this.uri = uri;
         this.port = port;
         this.time = time;
         this.input = input;
-        this.locale = locale;
-        this.messages = messages;
+        this.locale = locale;        
         this.commands = new HashSet<>();
         this.count = count;
     }
@@ -80,44 +79,40 @@ public class Scheduler {
     /**
      * URI of the server to which this schduler connects to.
      */
-    private String uri;
+    private final String uri;
     
     /**
      * Port number used on the server referred to by "uri" variable
      */
-    private int port;
+    private final int port;
     
     /**
      * Time interval (in seconds), for which at most the scheduler waits before 
      * executing the scheduled code.
      */
-    private int time;
+    private final int time;
     
     /**
      * Number of executions of the scheduled code before the program shuts down.
+     * If zero, the limit on number of executions is not set.
      */
-    private long count;
+    private final long count;
     
     /**
      * Path to the source file containing instructions that should be periodically
      * executed by this scheduler.
      */
-    private Path input;
+    private final Path input;
     
     /**
      * The current locale.
      */
-    private Locale locale;
-    
-    /**
-     * The current ResourceBundle used mainly for retrieving short descriptive texts.
-     */
-    private ResourceBundle messages;
-    
+    private final Locale locale;
+       
     /**
      * Conatins all the scheduled commands parsed by whitespace
      */
-    private Collection<List<String>> commands;
+    private final Collection<List<String>> commands;
     
     /**
      * Connects to the server and executes the scheduled code.

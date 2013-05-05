@@ -1,15 +1,12 @@
 package cz.filipekt;
 
-import java.math.BigInteger;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.List;
 
 /**
  *  The main class for computing the rolling hash over any data <br/>
  *  represented as sequence of bytes
- * @author Lifpa
+ * @author Tomas Filipek
  */
 class RollingHash{
     /**
@@ -23,11 +20,16 @@ class RollingHash{
     private long B = 0L;
     
     /**
+     * Size of the (algebraic) field in which the computations are executed.
+     */
+    private static final long Mod = Integer.MAX_VALUE + 1L;
+    
+    /**
      * 
      * @return The value of rolling hash for "data".
      */
     long getHash(){
-        return B;
+        return A + Mod * B;
     }
     
     /**
@@ -35,7 +37,7 @@ class RollingHash{
      * @return The value of safe hash for "data" , represented in hexadecimal format     
      */
     String getHexHash2() {
-        return RollingHash.computeHash2(data.getInternalArray(), counterLength, data.left, data.right);
+        return ServerUtils.computeStrongHash(data.getInternalArray(), counterLength, data.left, data.right);
     }       
     
     /**
@@ -88,19 +90,21 @@ class RollingHash{
     }
 
     /**
-     * Moves the "counter" by one byte. The new byte is "b", the old byte is the return value.
-     * @param b
+     * Moves the "counter" by one byte. The new byte is "newByte", the old byte is the return value.
+     * @param newByte
      * @return The byte which was dropped from the "counter"
      */
     byte add(byte b){        
-        byte old_byte = data.getFirst();
-        byte new_byte = b;
+        int oldByte = (int)data.getFirst() + 128;
+        int newByte = (int)b + 128;
         data.addLast(b);
-        A -= old_byte;
-        A += new_byte;
-        B -= (counterLength * old_byte);
-        B += A;        
-        if (valid<counterLength){
+        A -= oldByte;
+        A += newByte;
+        A %= Mod;
+        B -= (counterLength * oldByte);
+        B += A;
+        B %= Mod;
+        if (valid < counterLength){
             valid++;
         }
         return data.removeFirst();
@@ -133,27 +137,9 @@ class RollingHash{
             rh.add(b);
         }
         return rh.getHash();
-    }
+    }           
     
-   
-    static String computeHash2(byte[] in_data) {
-        if ((in_data == null) || (in_data.length == 0)){
-            return "";
-        }
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            md.update(in_data);         
-            byte[] h = md.digest();
-            return new BigInteger(h).toString(16);       
-        } catch (NoSuchAlgorithmException ex){
-            System.out.println(ex.getLocalizedMessage());
-            return "";
-        }
-    }
-    
-
-    
-    static String computeHash2(byte[] data, int windowSize, int from, int to) {
+    static long computeHash(byte[] data, int windowSize, int from, int to) {
         byte[] completeData = new byte[windowSize];
         int i = 0;
         for (int j = from; j < to; j++){
@@ -162,29 +148,8 @@ class RollingHash{
         while (i < windowSize){
             completeData[i++] = (byte)0;
         }
-        return RollingHash.computeHash2(completeData);
-    }
-    
-    /**
-     * Computes the secondary hash for "inData", padding the input data with zero's at the end up to 
-     * "capacity", if needed.
-     * @param in_data
-     * @return Hexadecimal SHA-2 hash for "in_data"
-     */
-    static String computeHash2(List<Byte> in_data, int capacity) {
-        byte[] data2 = new byte[capacity];
-        int i = 0;
-        for(byte b : in_data){
-           data2[i++] = b;
-           if (i >= capacity){
-               break;
-           }
-        }
-        while (i<capacity){
-           data2[i++] = (byte)0;
-        }
-        return RollingHash.computeHash2(data2);
-    }  
+        return RollingHash.computeHash(completeData);
+    }       
     
     /**
      * Custom implementation of a byte queue.
@@ -244,6 +209,5 @@ class RollingHash{
          * Right, exclusive bound on the currently used positions in "data".
          */
         private int right = 0;    
-    }    
-    
+    }        
 }

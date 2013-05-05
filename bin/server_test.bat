@@ -11,4 +11,6 @@ set RESERVED_SPACE=0
 :: Path to the jar containing the application
 set PATH_TO_JAR=../target/save-the-world.jar
 
-java -server -cp %PATH_TO_JAR% cz.filipekt.Server -home %HOME_DIR% -p %PORT% -space %RESERVED_SPACE%
+del /f /s /q ..\data
+
+java -server -XX:CompileThreshold=1 -cp %PATH_TO_JAR% cz.filipekt.Server -home %HOME_DIR% -p %PORT% -space %RESERVED_SPACE% -expensive 128 -blocksize 8192

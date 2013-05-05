@@ -5,27 +5,21 @@ import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import java.io.PrintStream;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Date;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.ResourceBundle;
-import java.util.TreeMap;
 import java.util.TreeSet;
-
-
 
 /** 
  *  Represents filesystem of the files which have been loaded to the server <br/>
- *  The actual data are not saved here, they are in separate files on disc
- * @author Lifpa
+ *  The actual data is not saved here, it is in separate files on disc
+ * @author Tomas Filipek
  */
 class Database {
 
@@ -36,35 +30,34 @@ class Database {
     private Map<String,DItem> fileMap;
     
     /**
-     * Maps names of files containing blocks to objects of type DBlok, <br/>
-     * which is the representation of blocks
+     * Contains the DBlock objects for all the present blocks.
      */
-    private TreeMap<String,DBlock> blockMap;
+    private Map<String,DBlock> blockMap;
     
     /**
-     * Set of all primary hash values used in the present blocks.
+     * Set of all primary h values used in the present blocks.
      * Used mainly for determining whether a block is not present.
      */
-    private TreeSet<Long> blockSet;    
+    private TreeSet<Long> blockHashes;    
     
     /**
-     * Set of all secondary hash values used in the present blocks.
+     * Set of all secondary h values used in the present blocks.
      * Used mainly for determining whether a block is present.
      */
-    private TreeSet<String> blockSet2;
+    private TreeSet<String> blockHashes2;
      
     /**
-     * Updates the blockSet and blockSet2 sets (databases of block hash values).
+     * Updates the blockHashes and blockHashes2 sets (databases of block h values).
      * Source of the new information is the blockMap.
      */
     private void refreshBlockSet(){
         synchronized (lockObject){
-            blockSet = new TreeSet<>();
-            blockSet2 = new TreeSet<>();
+            blockHashes = new TreeSet<>();
+            blockHashes2 = new TreeSet<>();
             for (DBlock block : blockMap.values()){
                 if (block != null){
-                    blockSet.add(block.getHash());
-                    blockSet2.add(block.getHash2());            
+                    blockHashes.add(block.getHash());
+                    blockHashes2.add(block.getHash2());            
                 }
             }
         }
@@ -78,11 +71,11 @@ class Database {
     /**
      * A linear list view of all the DFiles present in the database
      */
-    private Collection<DFile> regularFiles = new LinkedList<>();       
+    private Collection<DFile> regularFiles = new TreeSet<>();       
     
     Map<String,DItem> getFileMap(){
         synchronized (lockObject){
-            return fileMap;
+            return Collections.unmodifiableMap(fileMap);
         }
     }
     
@@ -92,7 +85,15 @@ class Database {
      */
     Collection<DFile> getFileCollection(){
         synchronized (lockObject){
-            return regularFiles;
+            return Collections.unmodifiableCollection(regularFiles);
+        }
+    }
+    
+    void addDirectory(DDirectory dir){
+        if (dir != null){
+            synchronized (lockObject){
+                fileMap.put(dir.getName(), dir);
+            }
         }
     }
     
@@ -103,14 +104,24 @@ class Database {
      */
     boolean makeDirs(List<String> path){
         synchronized (lockObject){
-            Map<String,DItem> current = fileMap;
+            Map<String,DItem> currentMap = fileMap;
+            DDirectory currentDir = null;
             for(String s : path){
-                if(!current.containsKey(s)){
-                    current.put(s, new DDirectory(s));
-                } else if (!current.get(s).isDir()){
-                    return false;
+                if (currentDir == null){
+                    if (!currentMap.containsKey(s)){
+                        addDirectory(new DDirectory(s));
+                    } else if (!currentMap.get(s).isDir()){
+                        return false;
+                    }
+                } else {
+                    if (!currentMap.containsKey(s)){
+                        currentDir.addItem(new DDirectory(s));
+                    } else if (!currentMap.get(s).isDir()){
+                        return false;
+                    }
                 }
-                current = ((DDirectory)current.get(s)).getItemMap();
+                currentDir = (DDirectory)currentMap.get(s);
+                currentMap = currentDir.getItemMap();                                                
             }
             return true;
         }
@@ -125,12 +136,30 @@ class Database {
             if(!makeDirs(path.subList(0, path.size()-1))){
                 throw new MalformedPath();
             }
-            DFile new_file = new DFile(path.get(path.size()-1));
+            DFile new_file = new DFile(path);
             DDirectory dir = (DDirectory) getItem(path.subList(0, path.size()-1));
             if(dir!=null){
-                dir.getItemMap().put(new_file.getName(), new_file);
+                if (!dir.getItemMap().containsKey(new_file.getName())){
+                    dir.addItem(new_file);
+                } else {
+                    DItem oldItem = dir.getItemMap().get(new_file.getName());
+                    if (oldItem.isDir()){
+                        throw new MalformedPath();
+                    } else {
+                        new_file = (DFile) oldItem;
+                    }
+                }
             } else {
-                fileMap.put(new_file.getName(), new_file);
+                if (!fileMap.containsKey(new_file.getName())){
+                    fileMap.put(new_file.getName(), new_file);
+                } else {
+                    DItem oldItem = fileMap.get(new_file.getName());
+                    if (oldItem.isDir()){
+                        throw new MalformedPath();
+                    } else {
+                        new_file = (DFile) oldItem;
+                    }
+                }
             }
             regularFiles.add(new_file);
         }
@@ -141,21 +170,26 @@ class Database {
      * @param path
      * @return 
      */
-    DItem getItem(List<String> path){ 
-        if (path == null){
+    DItem getItem(List<String> path){     
+        if ((path == null) || (path.isEmpty())){
             return null;
-        }
-        try{
-            synchronized (lockObject){                
+        } else {
+            synchronized (lockObject){
                 DItem current = fileMap.get(path.get(0));
-                for(int i = 1; i<path.size(); i++){
-                    current = ((DDirectory)current).getItemMap().get(path.get(i));            
+                if (current == null){
+                    return null;
+                } else {
+                    for(int i = 1; i<path.size(); i++){
+                        if ((current == null) || !(current instanceof DDirectory)){
+                            return null;
+                        } else {
+                            current = ((DDirectory)current).getItemMap().get(path.get(i));            
+                        }
+                    }
+                    return current;
                 }
-                return current;
             }
-        } catch (Exception ex){
-            return null;
-        }        
+        }
     }
     
     /**
@@ -185,7 +219,7 @@ class Database {
     void addVersion(List<String> path, DVersion ver){
         synchronized (lockObject){
             DFile file = (DFile) getItem(path);
-            file.getVersionList().add(ver);  
+            file.addVersion(ver);
         }
     }    
     
@@ -195,35 +229,26 @@ class Database {
      * @return 
      */
     boolean itemExists(List<String> path){
-        if (getItem(path)==null){
-            return false;
-        } else {
-            return true;
-        }
+        return getItem(path)!=null;
     }
     
     /** 
-     * Finds and return a DBlock specified by its two hash values
-     * @param hash
+     * Finds and return a DBlock specified by its two h values
+     * @param h
      * @return 
      */
     DBlock findBlock(long hash, String hash2){
         synchronized (lockObject){
             if (!blockExists(hash, hash2)){
                 return null;
-            } else {
-                for (DBlock bl : blockMap.values()){
-                    if ((bl.getHash() == hash) && bl.getHash2().equals(hash2)){
-                        return bl;
-                    }
-                }
-                return null;
+            } else {                
+                return blockMap.get(hash2);
             }
         }
     }    
     
     /**
-     * Returns true if and only if a block specified by the two hash <br/>
+     * Returns true if and only if a block specified by the two h <br/>
      * values is present in the database
      * @param hash1
      * @param hash2
@@ -231,16 +256,16 @@ class Database {
      */
     boolean blockExists(long hash1, String hash2){
         synchronized (lockObject){
-            return blockSet.contains(hash1) && blockSet2.contains(hash2);
+            return blockHashes.contains(hash1) && blockHashes2.contains(hash2);
         }
     }    
 
     private Database(){}
-    Database(Map<String,DItem> file_map, TreeMap<String,DBlock> block_map, TreeSet<Long> blockSet, TreeSet<String> blockSet2){
-        this.fileMap = file_map;
-        this.blockMap = block_map;   
-        this.blockSet  = blockSet;
-        this.blockSet2 = blockSet2;
+    Database(Map<String,DItem> fileMap, Map<String,DBlock> blockSet, TreeSet<Long> hashes, TreeSet<String> hashes2){
+        this.fileMap = fileMap;
+        this.blockMap = blockSet;
+        this.blockHashes  = hashes;
+        this.blockHashes2 = hashes2;
     }
     
     /**
@@ -251,17 +276,16 @@ class Database {
     Collection<DBlock> collectBlocks(){
         synchronized (lockObject){
             Collection<DBlock> res = new HashSet<>();       
-            Iterator<Map.Entry<String,DBlock>> it = blockMap.entrySet().iterator();
-            while(it.hasNext()){
-                Map.Entry<String,DBlock> entry = it.next();
-                DBlock value = entry.getValue();
-                if((value == null) || (value.getRefCount() == 0)){
-                    if (value != null){
-                        res.add(value);
+            Iterator<Entry<String,DBlock>> it = blockMap.entrySet().iterator();
+            while (it.hasNext()){
+                DBlock block = it.next().getValue();
+                if ((block == null) || (block.getRefCount() == 0)){
+                    if (block != null){
+                        res.add(block);
                     }
                     it.remove();
-                }                
-            }        
+                }
+            }            
             refreshBlockSet();        
             return res;
         }
@@ -274,10 +298,9 @@ class Database {
     void addBlock(DBlock block){
         synchronized(lockObject){
             if (block != null){
-                String name = block.getName();
-                blockMap.put(name, block);
-                blockSet.add(block.getHash());
-                blockSet2.add(block.getHash2());
+                blockMap.put(block.getHash2(), block);
+                blockHashes.add(block.getHash());
+                blockHashes2.add(block.getHash2());
             }
         }
     }
@@ -331,8 +354,8 @@ class Database {
             }
             if(verbose && (level==0)){
                 out.println("-----------------");
-                for(DBlock blok : blockMap.values()){
-                    out.println(blok.getHexHash() + " : refcount=" + blok.getRefCount());
+                for (DBlock block : blockMap.values()){
+                    out.println(block.getHexHash() + " : refcount=" + block.getRefCount());
                 }
             }    
         }
@@ -350,25 +373,24 @@ class Database {
                 if (t.blockMap == null){
                     output.writeInt(0);
                 } else {
-                    output.writeInt(t.blockMap.size());
-                    for (Entry<String,DBlock> entry : t.blockMap.entrySet()){
-                        output.writeString(entry.getKey());
-                        kryo.writeObject(output, entry.getValue(), DBlock.getSerializer());
+                    output.writeInt(t.blockMap.values().size());
+                    for (DBlock block : t.blockMap.values()){
+                        kryo.writeObject(output, block, DBlock.getSerializer());
                     }
                 }
-                if (t.blockSet == null){
+                if (t.blockHashes == null){
                     output.writeInt(0);
                 } else {
-                    output.writeInt(t.blockSet.size());
-                    for (Long l : t.blockSet){
+                    output.writeInt(t.blockHashes.size());
+                    for (Long l : t.blockHashes){
                         output.writeLong(l);
                     }
                 }                
-                if (t.blockSet2 == null){
+                if (t.blockHashes2 == null){
                     output.writeInt(0);
                 } else {
-                    output.writeInt(t.blockSet2.size());
-                    for (String s : t.blockSet2){
+                    output.writeInt(t.blockHashes2.size());
+                    for (String s : t.blockHashes2){
                         output.writeString(s);
                     }
                 }   
@@ -401,25 +423,25 @@ class Database {
         @Override
         public Database read(Kryo kryo, Input input, Class<Database> type) {
             Database res = new Database();            
-            int blockMapSize = input.readInt();
-            res.blockMap = new TreeMap<>();
-            for (int i = 0; i<blockMapSize; i++){
-                String key = input.readString();
-                DBlock val = kryo.readObject(input, DBlock.class, DBlock.getSerializer());
-                res.blockMap.put(key, val);
-            }
             int blockSetSize = input.readInt();
-            res.blockSet = new TreeSet<>();
+            res.blockMap = new HashMap<>();
             for (int i = 0; i<blockSetSize; i++){
-                res.blockSet.add(input.readLong());
+                DBlock val = kryo.readObject(input, DBlock.class, DBlock.getSerializer());
+                res.blockMap.put(val.getHash2(), val);
+            }
+            
+            int hashesSize = input.readInt();
+            res.blockHashes = new TreeSet<>();
+            for (int i = 0; i<hashesSize; i++){
+                res.blockHashes.add(input.readLong());
             }           
-            int blockSet2Size = input.readInt();
-            res.blockSet2 = new TreeSet<>();
-            for (int i = 0; i<blockSet2Size; i++){
-                res.blockSet2.add(input.readString());
+            int hashes2Size = input.readInt();
+            res.blockHashes2 = new TreeSet<>();
+            for (int i = 0; i<hashes2Size; i++){
+                res.blockHashes2.add(input.readString());
             }            
             int fileListSize = input.readInt();
-            res.regularFiles = new ArrayList<>();
+            res.regularFiles = new TreeSet<>();
             for (int i = 0; i< fileListSize; i++){                
                 res.regularFiles.add(kryo.readObject(input, DFile.class, DFile.getSerializer()));
             }
@@ -443,16 +465,16 @@ class Database {
     
     LightDatabase getLightDatabase(){
         synchronized (lockObject){
-            return new LightDatabase(blockSet, blockSet2);
+            return new LightDatabase(blockHashes, blockHashes2);
         }
     }
    
 }
 
 /**
- * A reduced version of the Database, contains only hash values of all the blocks.
+ * A reduced version of the Database, contains only h values of all the blocks.
  * Used mainly in the window-loop phase of adding new files on the client-side.
- * @author filipekt
+ * @author Tomas Filipek
  */
 class LightDatabase {
     private final TreeSet<Long> primaryHashes;
@@ -521,594 +543,4 @@ class LightDatabase {
 }
 
 class TooFewVersions extends Exception {}
-
-/**
- * Representation of a file for the use by Database
- * @author Lifpa
- */
-class DFile implements DItem{   
-    
-    /**
-     * The name of this file
-     */
-    private String name;
-
-    void setName(String name) {
-        this.name = name;
-    }
-    
-    @Override
-    public String getName() {
-        return name;
-    }
-    
-    /**
-     * The list of all present versions
-     */
-    private List<DVersion> versionList;
-
-    List<DVersion> getVersionList() {
-        return versionList;
-    }
-    
-    DFile(String filename, List<DVersion> version_list){
-        this.name = filename;
-        this.versionList = version_list;
-    }
-    DFile(String filename){
-        this.name = filename;
-        this.versionList = new LinkedList<>();
-    }          
-    public DFile() {}    
-    
-    /**
-     * Return the future number of consecutive scripts, in case a new version is saved as a script
-     * @return 
-     */
-    int consecutiveScripts(){
-        int count = 1;
-        for(int i = versionList.size()-1; i>=0; i--){
-            if (!versionList.get(i).isScriptForm()) {
-                break;
-            } else {
-                count++;
-            }
-        }
-        return count;
-    }
-    
-    /**
-     * Returns the latest version not saved as a script
-     * @return 
-     */
-    DVersion getLatestNonScript(){
-        return getLatestNonScript(versionList.size() - 1);
-    }
-    
-    private DVersion getLatestNonScript(int start){
-        for(int i = start; i>=0; i--){
-            if (!versionList.get(i).isScriptForm()) {
-                return versionList.get(i);
-            }
-        }   
-        return null;
-    }
-    
-    /**
-     * Returns true if and only if there exists a version of this file which is not saved as a script.
-     * @return 
-     */
-    boolean blockVersionExists(){
-        return (getVersionList() != null) && !getVersionList().isEmpty();
-    }
-    
-    /**
-     * Returns the latest version of the file.
-     * @return 
-     */
-    DVersion getLatestVersion(){
-        List<DVersion> versions = getVersionList();
-        if (versions != null){
-            int versionCount = versions.size();
-            if (versionCount > 0){
-                return versions.get(versionCount-1);
-            } else {
-                return null;
-            }
-        } else {
-            return null;
-        }        
-    }
-    
-    /**
-     * Returns true if and only if this object represents a directory. <br/>
-     * Of course, always returns false.
-     * @return 
-     */
-    @Override
-    public boolean isDir() {
-        return false;
-    }
-    
-    @Override
-    public String toString(){
-        return name;
-    }
-    
-    static Serializer<DFile> getSerializer(){
-        return new DFileSerializer();                
-    }
-    
-    private static class DFileSerializer extends Serializer<DFile>{
-
-        @Override
-        public void write(Kryo kryo, Output output, DFile t) {
-            output.writeString(t.name);
-            if (t.versionList == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.versionList.size());
-                for (DVersion dv : t.versionList){
-                    kryo.writeObject(output, dv, DVersion.getSerializer());
-                }
-            }            
-        }
-
-        @Override
-        public DFile read(Kryo kryo, Input input, Class<DFile> type) {
-            DFile res = new DFile();
-            res.name = input.readString();
-            res.versionList = new LinkedList<>();
-            int length = input.readInt();
-            for (int i = 0; i<length; i++){
-                DVersion item = kryo.readObject(input, DVersion.class, DVersion.getSerializer());
-                res.versionList.add(item);
-            }
-            return res;
-        }
-        
-    }
-}
-
-
-
-/**
- * Representation of a version of a file for the use by Database, DFile
- * @author Lifpa
- */
-class DVersion {    
-    
-    /**
-     * The list of blocks of this version - if editational==true, then blocks==null
-     */
-    private List<DBlock> blocks;
-
-    void setBlocks(List<DBlock> blocks) {
-        this.blocks = blocks;
-    }
-
-    List<DBlock> getBlocks() {
-        return blocks;
-    }
-    
-    /**
-     * Time of addition of this version to the database
-     */
-    private Date addedDate;        
-    
-    Date getAddedDate() {
-        return addedDate;
-    }    
-    
-    /**
-     * Is this version represented as a script?
-     * If not, it is assumed, that the version is stored in blocks of data.
-     */
-    private boolean scriptForm;
-
-    void setScriptForm(boolean scriptForm) {
-        this.scriptForm = scriptForm;
-    }
-    
-    boolean isScriptForm() {
-        return scriptForm;
-    }    
-    
-    
-    private String fileName;
-    
-    String getFileName() {
-        return fileName;
-    }    
-    
-    /**
-     * The block size used
-     */
-    private int blockSize;
-    
-    int getBlockSize() {
-        return blockSize;
-    }    
-    
-    /**
-     * SHA-512 hash value of the version contents.
-     */
-    private String contentHash;        
-
-    String getContentHash() {
-        return contentHash;
-    }
-    
-    /**
-     * Size of the version data in bytes.
-     */
-    private long size;
-
-    long getSize() {
-        return size;
-    }
-    
-    @Override
-    public boolean equals(Object o){
-        if (o instanceof DVersion){        
-            DVersion dv = (DVersion)o;
-            if ((blockSize != dv.blockSize)
-                    || (scriptForm != dv.scriptForm)
-                    || !(addedDate.equals(dv.addedDate))
-                    || !(fileName.equals(dv.fileName))){
-                return false;
-            }                
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    @Override
-    public int hashCode() {
-        int hash = 3;
-        hash = 43 * hash + Objects.hashCode(this.addedDate);
-        hash = 43 * hash + (this.scriptForm ? 1 : 0);
-        hash = 43 * hash + Objects.hashCode(this.fileName);
-        hash = 43 * hash + this.blockSize;
-        return hash;
-    }
-    
-    @Override
-    public String toString(){        
-        return addedDate + (scriptForm ? " : scripted" : "");
-    }
-    
-    DVersion(List<DBlock> blocks, int block_size, String fileName, String contentHash, long size){
-        this.blocks = blocks;
-        this.addedDate = new Date();
-        this.scriptForm = false;
-        this.blockSize = block_size;                        
-        this.fileName = fileName;
-        this.contentHash = contentHash;
-        this.size = size;
-    }    
-    private DVersion(){}
-    
-    /**
-     * Estimates the total number of bytes this version occupies.
-     * @return 
-     */
-    int estimateSize(){
-        if (blocks != null){
-            int total = 0;
-            for (DBlock block : blocks){
-                total += block.getUsed();
-            }
-            return total;
-        } else {
-            return 0;
-        }
-    }
-    
-    static Serializer<DVersion> getSerializer(){
-        return new DVersionSerializer();
-    }
-    
-    private static class DVersionSerializer extends Serializer<DVersion>{
-
-        @Override
-        public void write(Kryo kryo, Output output, DVersion t) {
-            output.writeLong(t.addedDate.getTime());
-            output.writeString(t.fileName);
-            output.writeInt(t.blockSize);
-            output.writeString(t.contentHash);
-            output.writeLong(t.size);
-            output.writeBoolean(t.scriptForm);
-            if (t.blocks == null){
-                output.writeInt(0);
-            } else {
-                output.writeInt(t.blocks.size());                
-                for (DBlock block : t.blocks){
-                    kryo.writeObject(output, block, DBlock.getSerializer());
-                }
-            }            
-        }
-
-        @Override
-        public DVersion read(Kryo kryo, Input input, Class<DVersion> type) {
-            DVersion res = new DVersion();
-            long date = input.readLong();
-            res.addedDate = new Date(date);
-            res.fileName = input.readString();
-            res.blockSize = input.readInt();
-            res.contentHash = input.readString();
-            res.size = input.readLong();
-            res.scriptForm = input.readBoolean();
-            res.blocks = new ArrayList<>();
-            int length = input.readInt();
-            for (int i = 0; i<length; i++){
-                DBlock item = kryo.readObject(input, DBlock.class, DBlock.getSerializer());
-                res.blocks.add(item);
-            }
-            return res;
-        }
-        
-    }
-}
-
-/**
- * Representation of a block for the use by Database and others
- * @author Lifpa
- */
-class DBlock {    
-    
-    /**
-     * The rolling hash value for this block
-     */
-    private long hash;
-    
-    long getHash(){
-        return hash;
-    }
-    
-    String getHexHash(){
-        return Long.toHexString(hash);
-    }
-    
-    @Override 
-    public boolean equals(Object o){
-        if (o instanceof DBlock){
-            DBlock t = (DBlock)o;
-            return  ((hash == t.hash) || hash2.equals(t.hash2) || (size == t.size));
-        } else {
-            return false;
-        }
-    }  
-
-    @Override
-    public int hashCode() {
-        int h = 7;
-        h = 71 * h + (int) (this.hash ^ (this.hash >>> 32));
-        h = 71 * h + Objects.hashCode(this.hash2);
-        h = 71 * h + this.size;
-        return h;
-    }
-
-    
-    /**
-     * Composes the name of the file used to save the block contents
-     * @return 
-     */
-    String getName(){
-        String hexHash = getHexHash();
-        if (col==0){
-            return  hexHash;
-        } else {
-            return hexHash + "v" + col;
-        }        
-    }
-    
-    /**
-     * Composes the name of the file used to save the block contents
-     * @param hexHash
-     * @param col
-     * @return 
-     */
-    static String getName(String hexHash, int col){
-        if ((hexHash == null) || (col<0)){
-            return null;
-        } else {
-            if (col==0){
-                return  hexHash;
-            } else {
-                return hexHash + "v" + col;
-            }   
-        }
-    }
-    
-    /**
-     * The position in the hash collision list (the list can have holes in it, however)
-     */
-    private int col = 0;
-
-    int getCol() {
-        return col;
-    }
-
-    void setCol(int col) {
-        this.col = col;
-    }
-           
-    /**
-     * The safe hash value for this block
-     */
-    private String hash2;
-
-    String getHash2() {
-        return hash2;
-    }
-    
-    /**
-     * The block size used (in bytes)
-     */
-    private int size;    
-
-    int getSize() {
-        return size;
-    }
-    
-    /**
-     * How many bytes (from the beginning) is valid
-     */
-    private int used;
-    
-    int getUsed() {
-        return used;
-    }    
-    
-    /**
-     * How many times is this block referenced
-     */
-    private int refCount = 0;
-
-    int getRefCount() {
-        return refCount;
-    }
-
-    void incrementRefCount(){
-        refCount++;
-    }
-    
-    void decrementRefCount(){
-        refCount--;
-    }
-
-    DBlock(long hash, String hash2, int size, int used){
-        this.hash = hash;
-        this.hash2 = hash2;
-        this.size = size;
-        this.used = used;
-    }
-    private DBlock(){}
-    
-    static Serializer<DBlock> getSerializer(){
-        return new DBlockSerializer();
-    }
-    
-    private static class DBlockSerializer extends Serializer<DBlock> {
-
-        @Override
-        public void write(Kryo kryo, Output output, DBlock t) {
-            output.writeInt(t.col);
-            output.writeInt(t.refCount);
-            output.writeInt(t.size);
-            output.writeInt(t.used);
-            output.writeLong(t.hash);
-            output.writeString(t.hash2);            
-        }
-
-        @Override
-        public DBlock read(Kryo kryo, Input input, Class<DBlock> type) {
-            DBlock res = new DBlock();
-            res.col = input.readInt();
-            res.refCount = input.readInt();
-            res.size = input.readInt();
-            res.used = input.readInt();
-            res.hash = input.readLong();
-            res.hash2 = input.readString();
-            return res;
-        }
-        
-    }
-}
-
-interface DItem {
-    boolean isDir();   
-    String getName();
-}
-
-/**
- * Representation of a directory for the use by Database and others
- * @author Lifpa
- */
-class DDirectory implements DItem {    
-
-    /**
-     * The name of this directory
-     */
-    private String name;
-    
-    @Override
-    public String getName() {
-        return name;
-    }    
-    
-    /**
-     * List of all items this directory contains
-     */
-    private Map<String,DItem> itemMap;
-
-    Map<String, DItem> getItemMap() {
-        return itemMap;
-    }
-    
-    @Override
-    public boolean isDir() {
-        return true;
-    }
-
-    DDirectory(String name) {
-        this.name = name;
-        this.itemMap = new HashMap<>();
-    }
-    
-    private DDirectory(){}
-    
-    static Serializer<DDirectory> getSerializer(){
-        return new DDirectorySerializer();
-    }
-    
-    private static class DDirectorySerializer extends Serializer<DDirectory> {
-
-        @Override
-        public void write(Kryo kryo, Output output, DDirectory t) {
-            output.writeString(t.name);
-            output.writeInt(t.itemMap.size());
-            for(Map.Entry<String,DItem> entry : t.itemMap.entrySet()){
-                output.writeString(entry.getKey()); 
-                boolean isDir = entry.getValue().isDir();
-                output.writeBoolean(isDir);                
-                if (isDir){
-                    kryo.writeObject(output, entry.getValue(), DDirectory.getSerializer());
-                } else {
-                    kryo.writeObject(output, entry.getValue(), DFile.getSerializer());
-                }
-            }            
-        }
-
-        @Override
-        public DDirectory read(Kryo kryo, Input input, Class<DDirectory> type) {
-            DDirectory res = new DDirectory();
-            Map<String,DItem> map = new HashMap<>();
-            res.name = input.readString();
-            int length = input.readInt();
-            for (int i = 0; i<length; i++){
-                String name = input.readString();
-                boolean isDir = input.readBoolean();
-                DItem item;
-                if (isDir){
-                    item = kryo.readObject(input, DDirectory.class, DDirectory.getSerializer());
-                } else {
-                    item = kryo.readObject(input, DFile.class, DFile.getSerializer());
-                }
-                map.put(name, item);
-            }
-            res.itemMap = map;
-            return res;
-        }
-        
-    }
-    
-    @Override
-    public String toString(){
-        return name;
-    }
-}
-
 class MalformedPath extends Exception {}

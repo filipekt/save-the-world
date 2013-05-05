@@ -7,7 +7,7 @@ port=6666
 # Possible values of locale: EN , CZ
 locale=EN
 
-# If no value is set, the client expects a batch job, so no control output is given.
-interactive=-interactive
+# Path to the jar containing the application
+path_to_jar="../target/save-the-world.jar"
 
-java -cp save-the-world.jar cz.filipekt.Client -c "$comp" -p $port -locale $locale $interactive
+java -cp $path_to_jar cz.filipekt.Client -c "$comp" -p $port -locale $locale -interactive

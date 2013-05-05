@@ -3,7 +3,7 @@ package cz.filipekt;
 /** 
  *  The enums representing some of the requests sent between a server and a client.
  *  It is a part of the communication protocol.
- * @author Lifpa
+ * @author Tomas Filipek
  */
 public enum Requests {
     /**

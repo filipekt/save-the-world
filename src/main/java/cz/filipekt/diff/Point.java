@@ -2,7 +2,7 @@ package cz.filipekt.diff;
 
 /**
  * A vertex in the edit graph.
- * @author filipekt
+ * @author Tomas Filipek
  */
 class Point {
             

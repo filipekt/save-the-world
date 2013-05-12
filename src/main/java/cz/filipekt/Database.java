@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
+import java.util.Set;
 import java.util.TreeSet;
 
 /** 
@@ -61,7 +62,13 @@ class Database {
                 }
             }
         }
-    }      
+    }   
+    
+    Set<Long> getBlockHashes(){
+        synchronized (lockObject){
+            return Collections.unmodifiableSet(blockHashes);
+        }
+    }
     
     /**
      * Lock object is used for synchronization.
@@ -259,6 +266,12 @@ class Database {
             return blockHashes.contains(hash1) && blockHashes2.contains(hash2);
         }
     }    
+    
+    boolean blockExists(String strongHash){
+        synchronized (lockObject){
+            return blockHashes2.contains(strongHash);
+        }
+    }
 
     private Database(){}
     Database(Map<String,DItem> fileMap, Map<String,DBlock> blockSet, TreeSet<Long> hashes, TreeSet<String> hashes2){
@@ -303,63 +316,7 @@ class Database {
                 blockHashes2.add(block.getHash2());
             }
         }
-    }
-    
-    /**
-     * Prints the basic structure of the database contents in a human readable form
-     * @param item
-     * @param level 
-     */
-    void printContents(DItem item, final int level, final boolean verbose, PrintStream out, ResourceBundle messages){
-        synchronized (lockObject){
-            if(level==0){
-                out.println(messages.getString("db_contents") + ":");
-            }
-            if(item==null){
-                for(DItem it : fileMap.values()){
-                    printContents(it, level+1, verbose, out, messages);
-                }
-            } else if (item.isDir()){
-                StringBuilder sb = new StringBuilder();
-                for(int i = 0;i<level;i++){
-                    sb.append(' ');
-                }
-                String prefix = sb.toString();
-                DDirectory dir = (DDirectory) item;
-                out.println(prefix + dir.getName());            
-                for(DItem it : ((DDirectory)item).getItemMap().values()){
-                    printContents(it, level+1, verbose, out, messages);
-                }
-            } else {
-                StringBuilder sb = new StringBuilder();
-                for(int i = 0;i<level;i++){
-                    sb.append(' ');
-                }
-                String prefix = sb.toString();
-                DFile file = (DFile) item;
-                out.println(prefix + file.getName());
-                int i = 0;
-                for(DVersion verze : file.getVersionList()){
-                    out.println(prefix + " |" + messages.getString("version") + " " + i++ + "|" + verze.getAddedDate().toString());
-                    if (verbose){
-                        if(!verze.isScriptForm()){
-                            for (DBlock db : verze.getBlocks()){
-                                out.println(prefix + " |" + "---> " + db.getHexHash());
-                            }
-                        } else {
-                            out.println(prefix + " |" + "---> " + messages.getString("edit_script"));
-                        }
-                    }
-                }
-            }
-            if(verbose && (level==0)){
-                out.println("-----------------");
-                for (DBlock block : blockMap.values()){
-                    out.println(block.getHexHash() + " : refcount=" + block.getRefCount());
-                }
-            }    
-        }
-    }        
+    }         
     
     static Serializer<Database> getSerializer(){
         return new DatabaseSerializer();
@@ -459,87 +416,8 @@ class Database {
                 res.fileMap.put(key, val);
             }
             return res;
-        }
-        
-    }
-    
-    LightDatabase getLightDatabase(){
-        synchronized (lockObject){
-            return new LightDatabase(blockHashes, blockHashes2);
-        }
-    }
-   
-}
-
-/**
- * A reduced version of the Database, contains only h values of all the blocks.
- * Used mainly in the window-loop phase of adding new files on the client-side.
- * @author Tomas Filipek
- */
-class LightDatabase {
-    private final TreeSet<Long> primaryHashes;
-    
-    private final TreeSet<String> secondaryHashes;
-    
-    boolean blockExists1(long hash){
-        return primaryHashes.contains(hash);
-    }
-    
-    boolean blockExists2(String hash){
-        return secondaryHashes.contains(hash);
-    }
-
-    LightDatabase(final TreeSet<Long> primaryHashes, final TreeSet<String> secondaryHashes) {
-        this.primaryHashes = primaryHashes;
-        this.secondaryHashes = secondaryHashes;
-    }        
-    
-    static Serializer<LightDatabase> getSerializer(){
-        return new LightDatabaseSerializer();
-    }
-    
-    private static class LightDatabaseSerializer extends Serializer<LightDatabase>{
-
-        @Override
-        public void write(Kryo kryo, Output output, LightDatabase t) {
-            kryo.reset();
-            if (t.primaryHashes == null){
-                output.writeInt(0, true);
-            } else {
-                output.writeInt(t.primaryHashes.size(), true);
-                for (long l : t.primaryHashes){
-                    output.writeLong(l);
-                }
-            }
-            if (t.secondaryHashes == null){
-                output.writeInt(0, true);
-            } else {
-                output.writeInt(t.secondaryHashes.size(), true);
-                for (String s : t.secondaryHashes){
-                    output.writeString(s);
-                }
-            }
-            kryo.reset();
-        }
-
-        @Override
-        public LightDatabase read(Kryo kryo, Input input, Class<LightDatabase> type) {
-            int size1 = input.readInt(true);
-            TreeSet<Long> primaryHashes = new TreeSet<>();
-            for (int i = 0; i<size1; i++){
-                long val = input.readLong();
-                primaryHashes.add(val);
-            }
-            int size2 = input.readInt(true);
-            TreeSet<String> secondaryHashes = new TreeSet<>();
-            for (int i = 0; i<size2; i++){
-                String val = input.readString();
-                secondaryHashes.add(val);
-            }  
-            return new LightDatabase(primaryHashes, secondaryHashes);
-        }
-        
-    }
+        }        
+    }     
 }
 
 class TooFewVersions extends Exception {}

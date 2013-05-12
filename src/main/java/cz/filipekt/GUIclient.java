@@ -509,12 +509,8 @@ public class GUIclient {
      * @param top 
      */
     private void createTreeNodes(DefaultMutableTreeNode top){
-        Database db1 = client.getDB();        
-        if (db1 != null){
-            db = db1;
-            Map<String,DItem> fileMap = db.getFileMap();
-            createTreeNodes2(top, fileMap);
-        }
+        Map<String,DItem> fileMap = client.getFS();
+        createTreeNodes2(top, fileMap);
     }    
     
     /**
@@ -792,17 +788,19 @@ public class GUIclient {
         }     
         try {
             boolean res;
-            if (isSelectedPathDir()){                    
-                res = client.receiveDirectory(selectedPathStrings, destination, zip, true, db, browserFrame);
+            if (isSelectedPathDir()){   
+                DDirectory dir = (DDirectory)((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject();
+                res = client.receiveDirectory(selectedPathStrings, destination, zip, true, dir, browserFrame);
             } else if (isSelectedPathVersion()){
                 DVersion version = (DVersion)((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject();
-                DFile file = db.findFile(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
+//                DFile file = db.findFile(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
+                DFile file = (DFile) client.getDItemFromServer(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
                 if (file == null) {
                     throw new FileNotFoundException();
                 }
-                res = client.receiveVersion(destination, selectedPathStrings.subList(0, selectedPathStrings.size()-1), file.getVersionList().indexOf(version), zip, db, browserFrame);
+                res = client.receiveVersion(destination, selectedPathStrings.subList(0, selectedPathStrings.size()-1), file.getVersionList().indexOf(version), zip, browserFrame);
             } else { // selected item is a file
-                res = client.receiveFile(destination, selectedPathStrings, zip, db, browserFrame);                
+                res = client.receiveFile(destination, selectedPathStrings, zip, browserFrame);                
             }
             if (res){
                 JOptionPane.showMessageDialog(browserFrame, messages.getString("download"), messages.getString("success"), JOptionPane.PLAIN_MESSAGE);
@@ -838,11 +836,5 @@ public class GUIclient {
      */    
     private boolean isSelectedPathVersion(){
         return ((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject() instanceof DVersion;
-    }
-    
-    /**
-     * A local copy of the server file database
-     */
-    private Database db;    
-    
+    }         
 }

@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
@@ -272,15 +273,6 @@ public final class Server {
                     List<String> fname;
                     long size;
                     switch(action_type){
-                        case GET_DB:                             
-                            kryo.writeObject(kryo_out, db, Database.getSerializer());
-                            kryo_out.flush();
-                            break;
-                        case GET_LIGHT_DB:
-                            LightDatabase ld = db.getLightDatabase();
-                            kryo.writeObject(kryo_out, ld, LightDatabase.getSerializer());
-                            kryo_out.flush();
-                            break;
                         case ITEM_EXISTS:
                             fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                             kryo_out.writeBoolean(db.itemExists(fname));
@@ -472,6 +464,52 @@ public final class Server {
                                 kryo_out.flush();
                             }
                             break;
+                        case GC:
+                            synchronized (lockObject){
+                                collect_blocks();
+                            }
+                            break;
+                        case GET_D_ITEM:
+                            synchronized (lockObject){
+                                fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
+                                DItem item = db.getItem(fname);
+                                if (item == null){
+                                    kryo_out.writeByte((byte)0);
+                                } else {
+                                    if (item.isDir()){
+                                        kryo_out.writeByte((byte)1);
+                                        DDirectory dir = (DDirectory)item;
+                                        kryo.writeObject(kryo_out, dir, DDirectory.getSerializer());
+                                    } else {
+                                        kryo_out.writeByte((byte)2);
+                                        file = (DFile)item;
+                                        kryo.writeObject(kryo_out, file, DFile.getSerializer());
+                                    }
+                                }                                
+                                kryo_out.flush();
+                            }
+                            break;
+                        case GET_FS:
+                            synchronized (lockObject){
+                                Map<String,DItem> fileMap = db.getFileMap();
+                                if (fileMap == null){
+                                    kryo_out.writeInt(0);
+                                } else {
+                                    kryo_out.writeInt(fileMap.size());
+                                    for (Entry<String,DItem> entry : fileMap.entrySet()){
+                                        kryo_out.writeString(entry.getKey());
+                                        boolean isDir = entry.getValue().isDir();
+                                        kryo_out.writeBoolean(isDir);
+                                        if (isDir){
+                                            kryo.writeObject(kryo_out, entry.getValue(), DDirectory.getSerializer());
+                                        } else {
+                                            kryo.writeObject(kryo_out, entry.getValue(), DFile.getSerializer());
+                                        }
+                                    }
+                                }
+                                kryo_out.flush();
+                            }
+                            break;
                     }
                 } catch (IOException | ClassNotFoundException | MalformedPath | NotEnoughSpaceOnDisc | BlockNotFound ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
@@ -500,10 +538,23 @@ public final class Server {
         Kryo kryo = new Kryo(null);
         kryo.setAutoReset(true);
         String message = kryo_in.readString();
-        while (message.equals("get_light_db")){
-            LightDatabase ld = db.getLightDatabase();            
-            kryo.writeObject(kryo_out, ld, LightDatabase.getSerializer());
-            kryo_out.flush();
+        while (message.equals("check") || message.equals("get_vals")){                                        
+            switch (message) {
+                case "check":
+                    String hash2 = kryo_in.readString();
+                    boolean exists = db.blockExists(hash2);
+                    kryo_out.writeBoolean(exists);
+                    kryo_out.flush();
+                    break;                
+                case "get_vals":
+                    Set<Long> vals = db.getBlockHashes();
+                    kryo_out.writeInt(vals.size());
+                    for (long L : vals){
+                        kryo_out.writeLong(L);
+                    }
+                    kryo_out.flush();
+                    break;
+            }
             message = kryo_in.readString();
         }
         switch(message){
@@ -512,7 +563,13 @@ public final class Server {
             case "raw_data":                    
                 byte[] data = kryo.readObject(kryo_in, byte[].class);  
                 newBlocks.add(Boolean.TRUE);
-                return create_save_blocks(data,bsize);                    
+                List<DBlock> res = create_save_blocks(data,bsize);                    
+                kryo_out.writeInt(res.size());
+                for (DBlock b : res){
+                    kryo_out.writeLong(b.getHash());
+                }
+                kryo_out.flush();
+                return res;
             case "hash":
                 long hash = kryo_in.readLong();
                 String hash2 = kryo_in.readString();
@@ -925,7 +982,7 @@ public final class Server {
     /**
      * The default blocksize used if blocksize is not specified in the program parameters.
      */
-    private static final int defaultBlockSize = 8192;
+    private static final int defaultBlockSize = 65536;
     
     /**
      * Used by the Eggert's heuristic in Myers' algorithm.
@@ -933,9 +990,9 @@ public final class Server {
     private final int tooExpensiveSnake;
     
     /**
-     * Default value for tooExpensiveSnake
+     * Default value for tooExpensiveSnake.
      */
-    private static final int defaultTooExpensive = 1024;
+    private static final int defaultTooExpensive = 128;
     
     /**
      * Parses "data" into blocks of size "blockSize". Their contents are saved <br/>

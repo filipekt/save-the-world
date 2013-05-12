@@ -13,4 +13,4 @@ set PATH_TO_JAR=../target/save-the-world.jar
 
 del /f /s /q ..\data
 
-java -server -XX:CompileThreshold=1 -cp %PATH_TO_JAR% cz.filipekt.Server -home %HOME_DIR% -p %PORT% -space %RESERVED_SPACE% -expensive 128 -blocksize 8192
+java -server -XX:CompileThreshold=1 -cp %PATH_TO_JAR% cz.filipekt.Server -home %HOME_DIR% -p %PORT% -space %RESERVED_SPACE% -expensive 128 -blocksize 65536

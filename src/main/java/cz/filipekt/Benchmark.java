@@ -57,6 +57,14 @@ public class Benchmark {
                 Benchmark bm = new Benchmark(outputPath);
                 bm.measureDelete(path, version);
                 bm.close();
+            } else if (type.equalsIgnoreCase("endline")){
+                Benchmark bm = new Benchmark(outputPath);
+                bm.endLine();
+                bm.close();
+            } else if (type.equalsIgnoreCase("gc")){
+                Benchmark bm = new Benchmark(outputPath);
+                bm.gc();
+                bm.close();
             }
         }
     }
@@ -91,7 +99,7 @@ public class Benchmark {
         long elapsed = after - before;
         client.terminateConnection();
         client.end();
-        pw.println(elapsed);                
+        pw.print(elapsed + ";");                
     }
     
     private void measureGet(String fname, String target, Integer version, boolean zip) throws IOException{       
@@ -114,7 +122,7 @@ public class Benchmark {
         long elapsed = after - before;
         client.terminateConnection();
         client.end();
-        pw.println(elapsed);        
+        pw.print(elapsed + ";");        
     }
     
     private void measureDelete(String path, int version) throws IOException{
@@ -132,6 +140,19 @@ public class Benchmark {
         elapsed /= 1000;
         client.terminateConnection();
         client.end();
-        pw.println(elapsed);
+        pw.print(elapsed + ";");
+    }
+    
+    private void endLine(){
+        pw.println();
+    }
+    
+    private void gc() throws IOException{
+        Client client = new Client(uri, port, null, locale, System.out, false);        
+        List<String> command = new LinkedList<>();
+        command.add("gc");                        
+        client.switchToOperation(command);                        
+        client.terminateConnection();
+        client.end();
     }
 }

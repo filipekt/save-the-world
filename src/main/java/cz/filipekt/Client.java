@@ -20,10 +20,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JFrame;
@@ -288,11 +291,12 @@ public class Client {
                 boolean verbose = false;
                 if ((request.size() > 1) && request.get(1).equalsIgnoreCase("verbose")){
                     verbose = true;
-                }
-                Database db = getDB();
-                if (db!=null){
-                    db.printContents(null, 0, verbose, stdout, messages);
-                }                    
+                }                
+                printContents(null, 0, verbose, stdout, messages, getFS(), null);                                    
+                break;
+            case "gc":
+                kryo.writeObject(kryo_output, Requests.GC);
+                kryo_output.flush();
                 break;
             default:
                 if (interactive){                        
@@ -302,6 +306,68 @@ public class Client {
         }
         return true;
     }
+    
+    /**
+     * Prints the basic structure of the database contents in a human readable form
+     * @param item
+     * @param level
+     * @param verbose
+     * @param out
+     * @param messages
+     * @param fileMap
+     * @param blockMap 
+     */
+    static void printContents(DItem item, final int level, final boolean verbose, PrintStream out, ResourceBundle messages, Map<String,DItem> fileMap, Map<String,DBlock> blockMap){
+        if (fileMap == null){
+            return;
+        }        
+        if(level==0){
+            out.println(messages.getString("db_contents") + ":");
+        }
+        if(item==null){
+            for(DItem it : fileMap.values()){
+                printContents(it, level+1, verbose, out, messages, fileMap, blockMap);
+            }
+        } else if (item.isDir()){
+            StringBuilder sb = new StringBuilder();
+            for(int i = 0;i<level;i++){
+                sb.append(' ');
+            }
+            String prefix = sb.toString();
+            DDirectory dir = (DDirectory) item;
+            out.println(prefix + dir.getName());            
+            for(DItem it : ((DDirectory)item).getItemMap().values()){
+                printContents(it, level+1, verbose, out, messages, fileMap, blockMap);
+            }
+        } else {
+            StringBuilder sb = new StringBuilder();
+            for(int i = 0;i<level;i++){
+                sb.append(' ');
+            }
+            String prefix = sb.toString();
+            DFile file = (DFile) item;
+            out.println(prefix + file.getName());
+            int i = 0;
+            for(DVersion verze : file.getVersionList()){
+                out.println(prefix + " |" + messages.getString("version") + " " + i++ + "|" + verze.getAddedDate().toString());
+                if (verbose){
+                    if(!verze.isScriptForm()){
+                        for (DBlock db : verze.getBlocks()){
+                            out.println(prefix + " |" + "---> " + db.getHexHash());
+                        }
+                    } else {
+                        out.println(prefix + " |" + "---> " + messages.getString("edit_script"));
+                    }
+                }
+            }
+        }
+        if(verbose && (blockMap != null) && (level==0)){
+            out.println("-----------------");
+            for (DBlock block : blockMap.values()){
+                out.println(block.getHexHash() + " : refcount=" + block.getRefCount());
+            }
+        }            
+    }       
     
     /**
      * Sends a special request to the server stating that the client is ready to </br>
@@ -346,8 +412,7 @@ public class Client {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    private void serveGet(List<String> request) throws IOException, ClassNotFoundException, WrongVersionNumber{
-        Database db = getDB();
+    private void serveGet(List<String> request) throws IOException, ClassNotFoundException, WrongVersionNumber{       
         if (request.size() < 3){
             return;
         }
@@ -362,21 +427,39 @@ public class Client {
                 versionNumber = Integer.valueOf(request.get(3));
             } catch (NumberFormatException ex){}
         }
-        if (!zip && !isCompatible(source, destination2, db)){            
+        DItem item = getDItemFromServer(source2);
+        if (!zip && !isCompatible(destination2, item)){            
             stdout.println(messages.getString("dir_into_file"));
             return;
-        }
-        DItem item = db.getItem(source2);
+        }        
         boolean res;
         if (item != null){
             if (item.isDir()){
-                res = receiveDirectory(source2, destination2, zip, true, db, null);
+                res = receiveDirectory(source2, destination2, zip, true, item, null);
             } else {
-                res = receiveVersion(destination2, source2, versionNumber, zip, db, null);
+                res = receiveVersion(destination2, source2, versionNumber, zip, null);
             }
             if (res) {
                 stdout.println(messages.getString("download_finished"));
             }
+        }
+    }
+    
+    DItem getDItemFromServer(List<String> path){
+        String[] path2 = path.toArray(new String[0]);
+        kryo.writeObject(kryo_output, Requests.GET_D_ITEM);
+        kryo.writeObject(kryo_output, path2);
+        kryo_output.flush();
+        byte res = kryo_input.readByte();
+        switch (res){
+            case (byte)1:
+                DDirectory dir = kryo.readObject(kryo_input, DDirectory.class, DDirectory.getSerializer());
+                return dir;
+            case (byte)2:
+                DFile file = kryo.readObject(kryo_input, DFile.class, DFile.getSerializer());
+                return file;
+            default:
+                return null;
         }
     }
        
@@ -385,21 +468,17 @@ public class Client {
      * @param sourceFile Path in the server database to the requested file.
      * @param versionNumber If not null, marks the version number of the requested version. If null, the latest version is used.
      * @param zip If set, a zipped archive is requested instead of raw data.
-     * @param db A copy of the server database.
      * @return The contents of the recieved file.
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    int[] serveGetBin(List<String> sourceFile, Integer versionNumber, final boolean zip, Database db) throws IOException, ClassNotFoundException, WrongVersionNumber{       
-        if (db == null){
-            db = getDB();
-        }
-        if(!db.itemExists(sourceFile)){
+    int[] serveGetBin(List<String> sourceFile, Integer versionNumber, final boolean zip) throws IOException, ClassNotFoundException, WrongVersionNumber{       
+        DItem item = getDItemFromServer(sourceFile);
+        if (item == null){
             stdout.println(messages.getString("sorry_the_file") + " " + messages.getString("doesnt_exist"));
             return null;
         }      
-        DItem item = db.getItem(sourceFile);
         if (zip){
             kryo.writeObject(kryo_output, Requests.GET_ZIP);
         } else {
@@ -410,11 +489,11 @@ public class Client {
         if(versionNumber != null){
             verze = versionNumber;
         } else if (!item.isDir()) {
-            verze = db.findFile(sourceFile).getVersionCount() - 1;
+            verze = ((DFile)item).getVersionCount() - 1;
         } else {
             verze = 0;
         }
-        if((!item.isDir()) && (verze >= db.findFile(sourceFile).getVersionCount())){
+        if((!item.isDir()) && (verze >= ((DFile)item).getVersionCount())){
             throw new WrongVersionNumber();
         }
         kryo_output.writeInt(verze);
@@ -460,11 +539,9 @@ public class Client {
      * @param destination
      * @return 
      */
-    private boolean isCompatible(String source, Path destination, Database db){
-        List<String> sorce2 = ServerUtils.parseName(source);
-        if (db.itemExists(sorce2)){
-            DItem item = db.getItem(sorce2);
-            return !item.isDir() || Files.isDirectory(destination);
+    private boolean isCompatible(Path destination, DItem it){
+        if (it != null){
+            return !it.isDir() || Files.isDirectory(destination);
         } else {
             return false;
         }
@@ -480,9 +557,9 @@ public class Client {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    boolean receiveFile(Path dest, List<String> sourceFile, final boolean zip, Database db, JFrame frame) 
+    boolean receiveFile(Path dest, List<String> sourceFile, final boolean zip, JFrame frame) 
             throws IOException, ClassNotFoundException, WrongVersionNumber{  
-        return receiveVersion(dest, sourceFile, null, zip, db, frame);
+        return receiveVersion(dest, sourceFile, null, zip, frame);
     }    
     
     /**
@@ -490,13 +567,16 @@ public class Client {
      * this method downloads the contents of the version to "destination"
      * @param destination
      * @param sourceFile
-     * @param version
+     * @param versionNumber
+     * @param zip
+     * @param frame
+     * @return
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
     boolean receiveVersion(Path destination, List<String> sourceFile, final Integer versionNumber, 
-            final boolean zip, Database db, JFrame frame) throws IOException, ClassNotFoundException, WrongVersionNumber{
+            final boolean zip, JFrame frame) throws IOException, ClassNotFoundException, WrongVersionNumber{
         if (sourceFile == null){
             return false;
         } 
@@ -517,7 +597,7 @@ public class Client {
                 } 
             }
         }
-        int[] data = serveGetBin(sourceFile, versionNumber, zip, db);
+        int[] data = serveGetBin(sourceFile, versionNumber, zip);
         if (data == null){            
             throw new FileNotFoundException();
         }
@@ -538,19 +618,22 @@ public class Client {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    boolean receiveDirectory(List<String> src, Path dest, final boolean zip, final boolean toplevel, Database db, JFrame frame) 
+    boolean receiveDirectory(List<String> src, Path dest, final boolean zip, final boolean toplevel, DItem item, JFrame frame) 
             throws IOException, ClassNotFoundException, WrongVersionNumber{
+        if ((src == null) || (dest == null) || (item == null)){
+            return false;
+        }
         boolean res = false;
         if (zip){
-            res = receiveFile(dest, src, true, db, frame);
+            res = receiveFile(dest, src, true, frame);
         } else {
             if (toplevel){
                 Path dest2 = Paths.get(dest.toAbsolutePath().toString(), src.get(src.size()-1));
                 Files.createDirectories(dest2);
                 dest = dest2;
             }
-            if (db.getItem(src).isDir()){
-                DDirectory dir = (DDirectory) db.getItem(src);
+            if (item.isDir()){
+                DDirectory dir = (DDirectory) item;
                 for (Map.Entry<String,DItem> entry : dir.getItemMap().entrySet()){
                     Path dest2 = Paths.get(dest.toAbsolutePath().toString(), entry.getKey());
                     List<String> src2 = new ArrayList<>();
@@ -561,38 +644,43 @@ public class Client {
                         if (Files.notExists(dest2)){
                             Files.createDirectories(dest2);
                         }
-                        // continue recursively in depth                    
-                        receiveDirectory(src2, dest2, false, false, db, frame);
+                        // continue recursively in depth   
+                        DItem item2 = entry.getValue();
+                        receiveDirectory(src2, dest2, false, false, item2, frame);
                     } else {
                         // handle entry as a regular file
-                        receiveFile(dest2, src2, false, db, frame);
+                        receiveFile(dest2, src2, false, frame);
                     }
                 }
                 res = true;
             }            
         }
         return res;
-    }    
+    }            
     
     /**
-     * Downloads a valid instance of Database from the server.
+     * Downloads a valid instance of the server filesystem root object.
      * @return 
      */
-    Database getDB() {        
-        kryo.writeObject(kryo_output, Requests.GET_DB);
-        kryo_output.flush();            
-        return kryo.readObject(kryo_input, Database.class, Database.getSerializer());                                   
+    Map<String,DItem> getFS(){
+        kryo.writeObject(kryo_output, Requests.GET_FS);
+        kryo_output.flush();
+        Map<String,DItem> res = new HashMap<>();
+        int count = kryo_input.readInt();
+        for (int i = 0; i<count; i++){
+            String key = kryo_input.readString();
+            boolean isDir = kryo_input.readBoolean();
+            DItem val;
+            if (isDir){
+                val = kryo.readObject(kryo_input, DDirectory.class, DDirectory.getSerializer());
+            } else {
+                val = kryo.readObject(kryo_input, DFile.class, DFile.getSerializer());
+            }
+            res.put(key, val);
+        }
+        return res;
     }
-    
-    /**
-     * Downloads a light version of Database from the server.    
-     * @return 
-     */
-    private LightDatabase getLightDatabase() {        
-        kryo_output.writeString("get_light_db");                
-        kryo_output.flush();        
-        return kryo.readObject(kryo_input, LightDatabase.class, LightDatabase.getSerializer());                     
-    }    
+        
     
     /**
      * Checks whether the specified "target" path points to an existing </br>
@@ -720,6 +808,33 @@ public class Client {
     }
     
     /**
+     * Retrieves a set of weak hash values of all the blocks on the server.
+     * @return 
+     */
+    private Set<Long> getHashValues(){
+        kryo_output.writeString("get_vals");
+        kryo_output.flush();
+        Set<Long> res = new HashSet<>();
+        int count = kryo_input.readInt();
+        for (int i = 0; i<count; i++){
+            res.add(kryo_input.readLong());
+        }
+        return res;
+    }
+    
+    /**
+     * After creating new blocks, the server sends the new weak hash values </br>
+     * back to the client and this methods receives it and adds it to the specified set.
+     * @param values 
+     */
+    private void updateHashValues(Set<Long> values){
+        int count = kryo_input.readInt();
+        for (int i = 0; i<count; i++){
+            values.add(kryo_input.readLong());
+        }
+    }
+    
+    /**
      * Processes an input file with the "window" method. At every position of the window
      * it checks the database for the current block. Depending on whether the block is new 
      * or already present, furher actions differ.
@@ -728,8 +843,8 @@ public class Client {
      * @param block_size
      * @throws IOException     
      */
-    private void windowLoop(byte[] fileContents, int block_size) throws IOException {
-        LightDatabase ld = getLightDatabase();        
+    private void windowLoop(byte[] fileContents, int block_size) throws IOException {      
+        Set<Long> hashValues = getHashValues();
         try (ByteArrayInputStream fin = new ByteArrayInputStream(fileContents)){
             RollingHash rh = new RollingHash(block_size);
             for(int i = 0; i<block_size-1; i++){        
@@ -756,10 +871,10 @@ public class Client {
 //                Hash collisions must be taken care of.
                 long hash = rh.getHash();
                 String hexHash2 = null;
-                boolean is_in_db = ld.blockExists1(hash);
+                boolean is_in_db = hashValues.contains(hash);
                 if(is_in_db){                    
                     hexHash2 = rh.getHexHash2();
-                    if (!ld.blockExists2(hexHash2)){
+                    if (!blockExists(hexHash2)){
                         is_in_db = false;
                     }                    
                 }
@@ -776,7 +891,7 @@ public class Client {
                         kryo.writeObject(kryo_output, res);
                         kryo_output.flush();
                         not_matched.clear();
-                        ld = getLightDatabase();
+                        updateHashValues(hashValues);
                     }
                   
 //                    Send the hash values of the block.
@@ -818,14 +933,13 @@ public class Client {
             if(not_matched.size() < block_size){
                 long hash = RollingHash.computeHash(not_matched, not_matched.size());
                 String hexHash2 = ServerUtils.computeStrongHash(not_matched, not_matched.size());
-                if ((ld.blockExists1(hash)) && (ld.blockExists2(hexHash2))){
+                if ((hashValues.contains(hash)) && (blockExists(hexHash2))){
                     kryo_output.writeString("hash");
                     kryo_output.writeLong(hash);
                     kryo_output.writeString(hexHash2);
                     kryo_output.flush();
                     finished = true;
-                } 
-                
+                }                 
             }
             if (!finished){
                 kryo_output.writeString("raw_data");
@@ -836,10 +950,24 @@ public class Client {
                 }
                 kryo.writeObject(kryo_output, res);
                 kryo_output.flush();
+                updateHashValues(hashValues);
             }
             kryo_output.writeString("end");
             kryo_output.flush();
         }
+    }
+    
+    /**
+     * Contacts the server and checks whether a block with the specified strong </br>
+     * hash is present.
+     * @param strongHash
+     * @return 
+     */
+    private boolean blockExists(String strongHash){
+        kryo_output.writeString("check");
+        kryo_output.writeString(strongHash);
+        kryo_output.flush();
+        return kryo_input.readBoolean();
     }
     
     /**

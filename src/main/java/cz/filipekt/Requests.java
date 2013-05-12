@@ -5,16 +5,7 @@ package cz.filipekt;
  *  It is a part of the communication protocol.
  * @author Tomas Filipek
  */
-public enum Requests {
-    /**
-     * Client requests a valid instance of Database to be delivered.
-     */
-    GET_DB,
-    
-    /**
-     * Client requests a lightweight version of the server's database.
-     */
-    GET_LIGHT_DB,
+public enum Requests {        
     
     /**
      * Client wants to know whether an item is present on the server.
@@ -59,5 +50,20 @@ public enum Requests {
     /**
      * Client finishes requesting
      */
-    END
+    END,
+    
+    /**
+     * Client requests a garbage collection over blocks to be performed on the server.
+     */
+    GC, 
+    
+    /**
+     * Client requests a DItem object to be sent.
+     */
+    GET_D_ITEM,
+    
+    /**
+     * Client requests the server database filesystem objects to be delivered.
+     */
+    GET_FS
 }

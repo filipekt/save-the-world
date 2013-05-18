@@ -65,5 +65,10 @@ public enum Requests {
     /**
      * Client requests the server database filesystem objects to be delivered.
      */
-    GET_FS
+    GET_FS,
+    
+    /**
+     * Client requests all the server block objects to be delivered.
+     */
+    GET_SERVER_BLOCKS
 }

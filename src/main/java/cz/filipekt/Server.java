@@ -510,6 +510,21 @@ public final class Server {
                                 kryo_out.flush();
                             }
                             break;
+                        case GET_SERVER_BLOCKS:
+                            synchronized (lockObject){
+                                Map<String,DBlock> blocks = db.getBlockMap();
+                                if (blocks == null){
+                                    kryo_out.writeInt(0);
+                                } else {
+                                    kryo_out.writeInt(blocks.size());
+                                    for (Entry<String,DBlock> entry : blocks.entrySet()){
+                                        kryo_out.writeString(entry.getKey());
+                                        kryo.writeObject(kryo_out, entry.getValue(), DBlock.getSerializer());
+                                    }
+                                }
+                                kryo_out.flush();
+                            }
+                            break;
                     }
                 } catch (IOException | ClassNotFoundException | MalformedPath | NotEnoughSpaceOnDisc | BlockNotFound ex) {
                     Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);

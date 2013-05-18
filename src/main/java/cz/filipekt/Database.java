@@ -4,7 +4,6 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
-import java.io.PrintStream;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -13,7 +12,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -67,6 +65,12 @@ class Database {
     Set<Long> getBlockHashes(){
         synchronized (lockObject){
             return Collections.unmodifiableSet(blockHashes);
+        }
+    }
+    
+    Map<String,DBlock> getBlockMap(){
+        synchronized (lockObject){
+            return Collections.unmodifiableMap(blockMap);
         }
     }
     

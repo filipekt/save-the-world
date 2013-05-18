@@ -291,8 +291,8 @@ public class Client {
                 boolean verbose = false;
                 if ((request.size() > 1) && request.get(1).equalsIgnoreCase("verbose")){
                     verbose = true;
-                }                
-                printContents(null, 0, verbose, stdout, messages, getFS(), null);                                    
+                }                        
+                printContents(null, 0, verbose, stdout, messages, getFS());                                                    
                 break;
             case "gc":
                 kryo.writeObject(kryo_output, Requests.GC);
@@ -317,7 +317,8 @@ public class Client {
      * @param fileMap
      * @param blockMap 
      */
-    static void printContents(DItem item, final int level, final boolean verbose, PrintStream out, ResourceBundle messages, Map<String,DItem> fileMap, Map<String,DBlock> blockMap){
+    void printContents(DItem item, final int level, final boolean verbose, 
+            PrintStream out, ResourceBundle messages, Map<String,DItem> fileMap){
         if (fileMap == null){
             return;
         }        
@@ -326,7 +327,7 @@ public class Client {
         }
         if(item==null){
             for(DItem it : fileMap.values()){
-                printContents(it, level+1, verbose, out, messages, fileMap, blockMap);
+                printContents(it, level+1, verbose, out, messages, fileMap);
             }
         } else if (item.isDir()){
             StringBuilder sb = new StringBuilder();
@@ -337,7 +338,7 @@ public class Client {
             DDirectory dir = (DDirectory) item;
             out.println(prefix + dir.getName());            
             for(DItem it : ((DDirectory)item).getItemMap().values()){
-                printContents(it, level+1, verbose, out, messages, fileMap, blockMap);
+                printContents(it, level+1, verbose, out, messages, fileMap);
             }
         } else {
             StringBuilder sb = new StringBuilder();
@@ -361,7 +362,8 @@ public class Client {
                 }
             }
         }
-        if(verbose && (blockMap != null) && (level==0)){
+        if(verbose && (level==0)){
+            Map<String,DBlock> blockMap = getServerBlocks();
             out.println("-----------------");
             for (DBlock block : blockMap.values()){
                 out.println(block.getHexHash() + " : refcount=" + block.getRefCount());
@@ -681,6 +683,22 @@ public class Client {
         return res;
     }
         
+    /**
+     * Downloads a map of all the block objects from the server.
+     * @return 
+     */
+    private Map<String,DBlock> getServerBlocks(){
+        kryo.writeObject(kryo_output, Requests.GET_SERVER_BLOCKS);
+        kryo_output.flush();
+        Map<String,DBlock> res = new HashMap<>();
+        int count = kryo_input.readInt();
+        for (int i = 0; i<count; i++){
+            String key = kryo_input.readString();
+            DBlock val = kryo.readObject(kryo_input, DBlock.class, DBlock.getSerializer());
+            res.put(key, val);
+        }
+        return res;
+    }
     
     /**
      * Checks whether the specified "target" path points to an existing </br>
@@ -834,6 +852,8 @@ public class Client {
         }
     }
     
+    private final int unmatchedLimit = 1024*1024*10;
+    
     /**
      * Processes an input file with the "window" method. At every position of the window
      * it checks the database for the current block. Depending on whether the block is new 
@@ -861,6 +881,19 @@ public class Client {
             boolean add_from_rh = true;
             boolean beginning = true;
             while ((c=fin.read())!=-1){
+                if (not_matched.size() > unmatchedLimit){
+                    kryo_output.writeString("raw_data");
+                    byte[] res = new byte[not_matched.size()];
+                    int i = 0;
+                    for (Byte bb : not_matched){
+                        res[i++] = bb;
+                    }                                                
+                    kryo.writeObject(kryo_output, res);
+                    kryo_output.flush();
+                    not_matched.clear();
+                    updateHashValues(hashValues);
+                }
+                
                 byte b = (byte) (c-128);
                 byte old = rh.add(b);
                 if(!beginning) {

@@ -7,7 +7,7 @@ import com.esotericsoftware.kryo.io.Output;
 import java.util.Objects;
 
 /**
- * Representation of a block for the use by Database and others
+ * Representation of a block for the use by Database and others.
  * @author Tomas Filipek
  */
 class DBlock {    
@@ -16,11 +16,15 @@ class DBlock {
      * The rolling hash value for this block
      */
     private final long hash;
-    
+        
     long getHash(){
         return hash;
     }
     
+    /**
+     * Returns the hexadecimal representation of the weak hash.
+     * @return 
+     */
     String getHexHash(){
         return Long.toHexString(hash);
     }
@@ -76,11 +80,7 @@ class DBlock {
     /**
      * The position in the hash collision list (the list can have holes in it, however)
      */
-    private final int col;
-
-    int getCol() {
-        return col;
-    }
+    private final int col;    
            
     /**
      * The safe hash value for this block
@@ -94,11 +94,7 @@ class DBlock {
     /**
      * The block size used (in bytes)
      */
-    private final int size;    
-
-    int getSize() {
-        return size;
-    }
+    private final int size;      
     
     /**
      * How many bytes (from the beginning) is valid
@@ -118,10 +114,16 @@ class DBlock {
         return refCount;
     }
 
+    /**
+     * Increments the block's reference count by 1.
+     */
     void incrementRefCount(){
         refCount++;
     }
     
+    /**
+     * Decrements the block's reference count by 1.
+     */
     void decrementRefCount(){
         if (refCount > 0){
             refCount--;

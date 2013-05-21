@@ -226,27 +226,7 @@ class ServerUtils {
         } catch (RuntimeException ex){
             return null;
         }
-    }
-    
-    /**
-     * Delivers the value of the -t switch from the program arguments "args"
-     * @param args
-     * @return 
-     */
-    static Integer getTime(String[] args){
-        try{
-            String time_s = null;
-            for(int i = 0; i<args.length; i++){
-                if(args[i].equals("-t")){
-                    time_s = args[i+1];
-                    break;
-                }
-            }
-            return Integer.parseInt(time_s);
-        } catch (RuntimeException ex){
-            return null;
-        }
-    }
+    }    
     
     /**
      * Delivers the value of the "opt" switch from the program arguments "args"

@@ -16,8 +16,8 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /** 
- *  Represents filesystem of the files which have been loaded to the server <br/>
- *  The actual data is not saved here, it is in separate files on disc
+ *  Represents filesystem of the files which have been uploaded to the server. <br/>
+ *  The actual data are held in separate files on disc.
  * @author Tomas Filipek
  */
 class Database {
@@ -34,19 +34,19 @@ class Database {
     private Map<String,DBlock> blockMap;
     
     /**
-     * Set of all primary h values used in the present blocks.
+     * Set of all primary hash values used in the present blocks.
      * Used mainly for determining whether a block is not present.
      */
     private TreeSet<Long> blockHashes;    
     
     /**
-     * Set of all secondary h values used in the present blocks.
+     * Set of all secondary hash values used in the present blocks.
      * Used mainly for determining whether a block is present.
      */
     private TreeSet<String> blockHashes2;
      
     /**
-     * Updates the blockHashes and blockHashes2 sets (databases of block h values).
+     * Updates the blockHashes and blockHashes2 sets (databases of block hash values).
      * Source of the new information is the blockMap.
      */
     private void refreshBlockSet(){
@@ -67,7 +67,7 @@ class Database {
             return Collections.unmodifiableSet(blockHashes);
         }
     }
-    
+        
     Map<String,DBlock> getBlockMap(){
         synchronized (lockObject){
             return Collections.unmodifiableMap(blockMap);
@@ -84,6 +84,10 @@ class Database {
      */
     private Collection<DFile> regularFiles = new TreeSet<>();       
     
+    /**
+     * Returns the root directory contents.
+     * @return 
+     */
     Map<String,DItem> getFileMap(){
         synchronized (lockObject){
             return Collections.unmodifiableMap(fileMap);
@@ -91,7 +95,7 @@ class Database {
     }
     
     /**
-     * Getter for regularFiles
+     * Getter for regularFiles.
      * @return 
      */
     Collection<DFile> getFileCollection(){
@@ -100,7 +104,11 @@ class Database {
         }
     }
     
-    void addDirectory(DDirectory dir){
+    /**
+     * Adds a new directory into the root directory.
+     * @param dir The directory to be added.
+     */
+    private void addDirectory(DDirectory dir){
         if (dir != null){
             synchronized (lockObject){
                 fileMap.put(dir.getName(), dir);
@@ -109,8 +117,8 @@ class Database {
     }
     
     /**
-     * Creates a path and all the items on it
-     * @param path
+     * Creates a path and all the items on it.
+     * @param path The path to be created.
      * @return 
      */
     boolean makeDirs(List<String> path){
@@ -139,8 +147,9 @@ class Database {
     }
     
     /**
-     * Adds a new file specified by "path" to the database "filesystem"
-     * @param name 
+     * Adds a new file specified by "path" to the database filesystem.
+     * @param path A path to the new file.
+     * @throws MalformedPath 
      */
     void addFile(List<String> path) throws MalformedPath{  
         synchronized (lockObject){
@@ -177,8 +186,8 @@ class Database {
     }
     
     /**
-     * Finds a "path" in the database filesystem
-     * @param path
+     * Finds a "path" in the database filesystem.
+     * @param path The path to search for.
      * @return 
      */
     DItem getItem(List<String> path){     
@@ -204,28 +213,25 @@ class Database {
     }
     
     /**
-     * Wrapper function for getItem(..)
-     * @param path
+     * Wrapper function for getItem(..), retrieves a regular file.
+     * @param path Path to a regular file in the server database.
      * @return 
      */
     DFile findFile(List<String> path){
         synchronized (lockObject){
-            DItem item = getItem(path);
-            if(item==null){
-                return null;
-            }
-            if(!item.isDir()){
+            DItem item = getItem(path);            
+            if((item != null) && (!item.isDir())){
                 return (DFile)item;
             } else {
                 return null;
-            }
+            }            
         }
     }    
     
     /**
-     * It adds a new version "ver" to the specified file ("fname") 
-     * @param fname
-     * @param ver 
+     * It adds a new version to the file specified by a path.
+     * @param path A path to the file to which we add a new version.
+     * @param ver The version to be added.
      */
     void addVersion(List<String> path, DVersion ver){
         synchronized (lockObject){
@@ -235,17 +241,18 @@ class Database {
     }    
     
     /**
-     * Returns true if and only if the path "path" exists in the database filesystem
-     * @param path
+     * Returns true if and only if the path "path" exists in the database filesystem.
+     * @param path The path to search for.
      * @return 
      */
     boolean itemExists(List<String> path){
         return getItem(path)!=null;
     }
     
-    /** 
-     * Finds and return a DBlock specified by its two h values
-     * @param h
+    /**
+     * Finds and returns a DBlock specified by its hash values.
+     * @param hash A weak hash value.
+     * @param hash2 A strong hash value.
      * @return 
      */
     DBlock findBlock(long hash, String hash2){
@@ -259,10 +266,10 @@ class Database {
     }    
     
     /**
-     * Returns true if and only if a block specified by the two h <br/>
+     * Returns true if and only if a block specified by the two hash <br/>
      * values is present in the database
-     * @param hash1
-     * @param hash2
+     * @param hash1 A weak hash value.
+     * @param hash2 A strong hash value.
      * @return 
      */
     boolean blockExists(long hash1, String hash2){
@@ -271,6 +278,11 @@ class Database {
         }
     }    
     
+    /**
+     * Returns true if and only if a block with the specified strong hash exists.
+     * @param strongHash A strong hash value.
+     * @return 
+     */
     boolean blockExists(String strongHash){
         synchronized (lockObject){
             return blockHashes2.contains(strongHash);
@@ -286,7 +298,7 @@ class Database {
     }
     
     /**
-     * Iterates through all the blocks and returns those with reference count equal to zero.
+     * Iterates through all of the blocks and returns those with reference count equal to zero.
      * These are also removed from the block database.
      * @return 
      */
@@ -309,8 +321,8 @@ class Database {
     }
     
     /**
-     * Add the specified block in the block database.
-     * @param block 
+     * Add the specified block into the block database.
+     * @param block The block to be added.
      */
     void addBlock(DBlock block){
         synchronized(lockObject){

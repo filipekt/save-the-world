@@ -657,10 +657,10 @@ public final class Server {
     }
     
     /**
-     * Deletes a version of a file. In case the version is saved saved as blocks, </br>
-     * also all the dependent scripted versionList are deleted. </br>
-     * @param file
-     * @param version
+     * Deletes a version of a file. In case the version is stored in block-form, </br>
+     * all the dependent scripted versions are also deleted. </br>
+     * @param file The file to which the version belongs to.
+     * @param version The version to be deleted.
      * @throws TooFewVersions 
      */
     private void unsafelyDeleteVersion(DFile file, DVersion version) throws TooFewVersions{        
@@ -879,12 +879,11 @@ public final class Server {
 
     
     /**
-     * Returns the contents of the "index"-th version of "fileToGet", in case <br/>
-     * it is need a transformation from script form is done
-     * @param versionList
-     * @return
-     * @throws IOException
-     * @throws BlockNotFound 
+     * Returns the contents of the "index"-th version of "fileToGet". <br/>
+     * If needed, a transformation from script form is done.
+     * @param fileToGet The file to get.
+     * @param index The number of the version to get.
+     * @return 
      */
     private byte[] serveGet(DFile fileToGet, int index) {        
         try{
@@ -982,7 +981,7 @@ public final class Server {
     
     /**
      * Determines the optimal block size used for storing a file's contents.
-     * @param fileSize The size of the file.
+     * @param fileSize The size of the file. Currently not used.
      * @return 
      */
     private int getBlockSize(long fileSize){
@@ -1105,7 +1104,7 @@ public final class Server {
     /**
      * Adds a file or an empty directory to a zip archive via "zos" output stream.
      * @param item The location of the root element being zipped.
-     * @param versionNumber 
+     * @param versionNumber A number of the version to use.
      * @param zos Output stream to the zip archive.
      * @param path Path prefix.
      * @throws FileNotFoundException

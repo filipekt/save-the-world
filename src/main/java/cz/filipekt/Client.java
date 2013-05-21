@@ -33,7 +33,7 @@ import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 
 /**
- * Representation of the client that connects to server
+ * Representation of the client that connects to server.
  * @author Tomas Filipek
  */
 public class Client {
@@ -183,7 +183,7 @@ public class Client {
     }
     
     /**
-     * Pre-processes the user request before handing it to the switchToOperation() method.
+     * Reads and pre-processes the user request before handing it to the switchToOperation() method.
      * @return Success/failure of operation
      */
     private boolean serveOperation(){
@@ -218,7 +218,7 @@ public class Client {
     /**
      * According to the type of the request, this method delegates further actions
      * to specialized methods or serves the request in place.
-     * @param request
+     * @param request A user request parsed into a list.
      * @return 
      */
     boolean switchToOperation(List<String> request){
@@ -308,16 +308,15 @@ public class Client {
     }
     
     /**
-     * Prints the basic structure of the database contents in a human readable form
-     * @param item
-     * @param level
-     * @param verbose
-     * @param out
-     * @param messages
-     * @param fileMap
-     * @param blockMap 
+     * Prints the contents of the server database in a human readable form.
+     * @param item The directory whose contents shall be printed.
+     * @param level Distance of the "item" from the root directory.
+     * @param verbose If set, some additional information is printed.
+     * @param out Where to print the output.
+     * @param messages Source of localized text messages.
+     * @param fileMap Server file database root directory.
      */
-    void printContents(DItem item, final int level, final boolean verbose, 
+    private void printContents(DItem item, final int level, final boolean verbose, 
             PrintStream out, ResourceBundle messages, Map<String,DItem> fileMap){
         if (fileMap == null){
             return;
@@ -409,7 +408,7 @@ public class Client {
      * Takes care of a get request. Checks whether the requested file is present </br>
      * on server, whether the local target is directory when downloading a directory.. </br>    
      * The actual transmission is handed to other methods - receiveVersion(..), ...
-     * @param request
+     * @param request A user request of type "get", parsed into a list.
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
@@ -447,6 +446,11 @@ public class Client {
         }
     }
     
+    /**
+     * Downloads from server a DItem object representing the specified path.
+     * @param path Path in the server database.
+     * @return 
+     */
     DItem getDItemFromServer(List<String> path){
         String[] path2 = path.toArray(new String[0]);
         kryo.writeObject(kryo_output, Requests.GET_D_ITEM);
@@ -475,7 +479,8 @@ public class Client {
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
      */
-    int[] serveGetBin(List<String> sourceFile, Integer versionNumber, final boolean zip) throws IOException, ClassNotFoundException, WrongVersionNumber{       
+    private int[] serveGetBin(List<String> sourceFile, Integer versionNumber, final boolean zip) 
+            throws IOException, ClassNotFoundException, WrongVersionNumber{       
         DItem item = getDItemFromServer(sourceFile);
         if (item == null){
             stdout.println(messages.getString("sorry_the_file") + " " + messages.getString("doesnt_exist"));
@@ -553,8 +558,11 @@ public class Client {
      * Given the file "sourceFile" on server and the path "dest" at the client, </br>
      * this method downloads the contents of "sourceFile" to "dest", creating the </br>
      * target file if necessary
-     * @param dest
-     * @param sourceFile
+     * @param dest Marks where the downloaded file should be saved.
+     * @param sourceFile A path on the server.
+     * @param zip Should the downloaded file(s) be zipped?
+     * @param frame If null, command-line interface is used. Otherwise, a parent window is provided.
+     * @return
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
@@ -567,11 +575,11 @@ public class Client {
     /**
      * Given the file "sourceFile" on server, it's version "version" and the path "destination" at the client, </br>
      * this method downloads the contents of the version to "destination"
-     * @param destination
-     * @param sourceFile
-     * @param versionNumber
-     * @param zip
-     * @param frame
+     * @param destination Marks where the downloaded file should be saved.
+     * @param sourceFile A path on the server.
+     * @param versionNumber A version number of the version to download.
+     * @param zip Should the downloaded file(s) be zipped?
+     * @param frame If null, command-line interface is used. Otherwise, a parent window is provided.
      * @return
      * @throws IOException
      * @throws ClassNotFoundException
@@ -614,8 +622,13 @@ public class Client {
     /**
      * Given the directory "src" on server and the path "dest" at the client, </br>
      * this method downloads the contents of "src" to "dest"
-     * @param src
-     * @param dest
+     * @param src Path on the server.
+     * @param dest Path on the local computer.
+     * @param zip Should the downloaded files be zipped?
+     * @param toplevel Marks whether we are at the top level of recursion.
+     * @param item The DItem object representing the desired path on the server.
+     * @param frame If null, command-line interface is used. Else, a parent window is given.
+     * @return
      * @throws IOException
      * @throws ClassNotFoundException
      * @throws WrongVersionNumber 
@@ -661,7 +674,7 @@ public class Client {
     }            
     
     /**
-     * Downloads a valid instance of the server filesystem root object.
+     * Downloads a valid instance of the server filesystem root directory.
      * @return 
      */
     Map<String,DItem> getFS(){
@@ -719,7 +732,7 @@ public class Client {
     
     /**
      * Serves the user request of type "add" , which adds a new file/directory into the system
-     * @param request
+     * @param request The user request of type "add", parsed into a list.
      * @param frame The JFrame used to show info/error messages. If null, standard ouput is used.
      * @param checkSize If set, the server checks whether the reserved space is not exceeded.
      * @throws IOException 
@@ -842,8 +855,8 @@ public class Client {
     
     /**
      * After creating new blocks, the server sends the new weak hash values </br>
-     * back to the client and this methods receives it and adds it to the specified set.
-     * @param values 
+     * back to the client. This methods receives it and adds it to the specified set.
+     * @param values A set to which the new values will be added.
      */
     private void updateHashValues(Set<Long> values){
         int count = kryo_input.readInt();
@@ -852,22 +865,25 @@ public class Client {
         }
     }
     
-    private final int unmatchedLimit = 1024*1024*10;
+    /**
+     * If the section of input file that matches no known block grows over this limit, 
+     * it is sent to the server.
+     */
+    private final int unmatchedLimit = 1024*1024*8;
     
     /**
      * Processes an input file with the "window" method. At every position of the window
      * it checks the database for the current block. Depending on whether the block is new 
      * or already present, furher actions differ.
-     * @param file
-     * @param db
-     * @param block_size
-     * @throws IOException     
+     * @param fileContents Contents of the file to be processed.
+     * @param blockSize Used block size.
+     * @throws IOException 
      */
-    private void windowLoop(byte[] fileContents, int block_size) throws IOException {      
+    private void windowLoop(byte[] fileContents, int blockSize) throws IOException {      
         Set<Long> hashValues = getHashValues();
         try (ByteArrayInputStream fin = new ByteArrayInputStream(fileContents)){
-            RollingHash rh = new RollingHash(block_size);
-            for(int i = 0; i<block_size-1; i++){        
+            RollingHash rh = new RollingHash(blockSize);
+            for(int i = 0; i<blockSize-1; i++){        
                 int c = fin.read();                    
                 if (c==-1) {
                     break;
@@ -963,7 +979,7 @@ public class Client {
 
 //          All the bytes that are left must be now sent.
             boolean finished = false;
-            if(not_matched.size() < block_size){
+            if(not_matched.size() < blockSize){
                 long hash = RollingHash.computeHash(not_matched, not_matched.size());
                 String hexHash2 = ServerUtils.computeStrongHash(not_matched, not_matched.size());
                 if ((hashValues.contains(hash)) && (blockExists(hexHash2))){
@@ -1006,7 +1022,7 @@ public class Client {
     /**
      * Serves the user request of type "delete", which deletes a version of a file,
      * unless the version is the only one present.
-     * @param request
+     * @param request A user request of type "delete", parsed into a list.
      * @return Whether the deletion succeded.
      */
     private boolean serveDelete(List<String> request){

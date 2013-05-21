@@ -12,7 +12,7 @@ import java.util.Objects;
 
 
 /**
- * Representation of a version of a file for the use by Database, DFile
+ * Representation of a version of a file for the use by Database class and others.
  * @author Tomas Filipek
  */
 class DVersion {    
@@ -84,14 +84,10 @@ class DVersion {
     /**
      * The name of the file this version belongs to.
      */
-    private final String fileName;
-    
-    String getFileName() {
-        return fileName;
-    }    
+    private final String fileName;    
     
     /**
-     * The block size used
+     * The block size used.
      */
     private final int blockSize;
     
@@ -111,11 +107,7 @@ class DVersion {
     /**
      * Size of the version data in bytes.
      */
-    private final long size;
-
-    long getSize() {
-        return size;
-    }
+    private final long size;   
 
     @Override
     public int hashCode() {

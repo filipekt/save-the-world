@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  *  The main class for computing the rolling hash over any data <br/>
- *  represented as sequence of bytes
+ *  represented as a sequence of bytes.
  * @author Tomas Filipek
  */
 class RollingHash{
@@ -21,20 +21,26 @@ class RollingHash{
     
     /**
      * Size of the (algebraic) field in which the computations are executed.
+     * Set to 2^31 - 1 (a prime).
      */
-    private static final long Mod = Integer.MAX_VALUE + 1L;
+    private final long Mod = (long)Integer.MAX_VALUE;
+    
+    /**
+     * 2 powered to 32
+     */
+    private final long pow_2_32 = 4294967296L;
     
     /**
      * 
      * @return The value of rolling hash for "data".
      */
     long getHash(){
-        return A + Mod * B;
+        return A + pow_2_32 * B;
     }
     
     /**
-     * 
-     * @return The value of safe hash for "data" , represented in hexadecimal format     
+     * Returns the value of safe hash for "data" , represented in hexadecimal format. 
+     * @return 
      */
     String getHexHash2() {
         return ServerUtils.computeStrongHash(data.getInternalArray(), counterLength, data.left, data.right);
@@ -91,7 +97,7 @@ class RollingHash{
 
     /**
      * Moves the "counter" by one byte. The new byte is "newByte", the old byte is the return value.
-     * @param newByte
+     * @param b The new byte that will be added to the counter.
      * @return The byte which was dropped from the "counter"
      */
     byte add(byte b){        
@@ -131,6 +137,12 @@ class RollingHash{
         return RollingHash.computeHash(inData2);
     }     
     
+    /**
+     * Computes the rolling hash value for the input data. </br>
+     * Counter size is set to be equal to the input array length.
+     * @param data The data of which the hash will be computed.
+     * @return 
+     */
     static long computeHash(byte[] data){
         RollingHash rh = new RollingHash(data.length);
         for (byte b : data){
@@ -139,6 +151,15 @@ class RollingHash{
         return rh.getHash();
     }           
     
+    /**
+     * Computes the rolling hash for the input data, starting at a specified position, </br>
+     * ending at a specified position and padding 0s up to the specified counter size.
+     * @param data Input data.
+     * @param windowSize Counter size used.
+     * @param from Start position at the input array, inclusive.
+     * @param to End position at the input array, exclusive.
+     * @return 
+     */
     static long computeHash(byte[] data, int windowSize, int from, int to) {
         byte[] completeData = new byte[windowSize];
         int i = 0;

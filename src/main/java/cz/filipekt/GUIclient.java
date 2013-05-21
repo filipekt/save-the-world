@@ -1,7 +1,3 @@
-/*
- * To change this template, choose Tools | Templates
- * and open the template in the editor.
- */
 package cz.filipekt;
 
 import java.awt.Container;
@@ -82,9 +78,10 @@ public class GUIclient {
     private Client client;
     
     /**
-     * Instantiates the "client" variable.
-     * @param comp
-     * @param port
+     * Instantiates the "client" variable by connecting to the server.
+     * @param comp URI of the server.
+     * @param port Port used by the server.
+     * @param locale Localization of the client.
      * @throws IOException 
      */
     private void connect(String comp, int port, Locale locale) throws IOException{        
@@ -92,7 +89,7 @@ public class GUIclient {
     }
     
     /**
-     * The valid locale
+     * The client localization.
      */
     private Locale locale;
     
@@ -256,8 +253,14 @@ public class GUIclient {
         }
     }
     
+    /**
+     * Conatins settings and options.
+     */
     private JFrame settingsFrame;
     
+    /**
+     * Creates and shows a window containing various settings or options.
+     */
     private void createAndShowSettingsFrame(){
         settingsFrame = new JFrame("settings");
         settingsFrame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
@@ -427,6 +430,7 @@ public class GUIclient {
     /**
      * Creates and shows the window which gives user options, where to
      * download a file - a default or custom location.
+     * @param zip If set, we are downloading a zipped item.
      */
     private void createAndShowDownloadFrame(final boolean zip){
         downloadFrame = new JFrame(messages.getString("download_frame"));
@@ -505,8 +509,8 @@ public class GUIclient {
     }
     
     /**
-     * Builds the "tree" according to the contents of the server file database.
-     * @param top 
+     * Builds a tree-like view of the contents of the server file database.
+     * @param top Root node.
      */
     private void createTreeNodes(DefaultMutableTreeNode top){
         Map<String,DItem> fileMap = client.getFS();
@@ -516,7 +520,7 @@ public class GUIclient {
     /**
      * Determines, what path is selected in the GUIclient view of server files
      */
-    private List<TreeNode> selectedPath = null;
+    private List<TreeNode> selectedPath;
     
     /**
      * When a file/directory is selected in the graphical view of server file database,
@@ -676,7 +680,8 @@ public class GUIclient {
     }    
       
    /**
-    * Takes care of the add command
+    * Takes care of the GUI aspects of the add command. </br>
+    * The actual data manipulation is done by the Client class.
     */
     private void serveAdd(){
         if (selectedPath == null){            
@@ -722,8 +727,8 @@ public class GUIclient {
     
     /**
      * Returns false if and only if the user is trying to download a directory into a regular file.
-     * @param source
-     * @param destination
+     * @param source A path on the server.
+     * @param destination A path on the local machine.
      * @return 
      */
     private boolean isCompatible(List<TreeNode> source, Path destination){
@@ -746,7 +751,10 @@ public class GUIclient {
     }
     
     /**
-     * Takes care of the get command
+     * Takes care of the GUI aspects of the get command. </br>
+     * The actual data manipulation is done by the Client class.
+     * @param zip If set, we are downloading a zipped item.
+     * @param defaultDestination If set, the default destination for saving the downloaded files is used.
      */
     private void serveGet(final boolean zip, final boolean defaultDestination){    
         if (selectedPath == null){            

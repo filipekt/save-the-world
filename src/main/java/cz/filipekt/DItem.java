@@ -12,16 +12,26 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- *
+ * Represents a node in the server database file system, </br>
+ * i.e. can hold a directory (DDirectory) or a file (DFile).
  * @author Tomas Filipek
  */
 interface DItem {
+    /**
+     * Tells, whether the item represents a directory.
+     * @return 
+     */
     boolean isDir();   
+    
+    /**
+     * Returns the name of the item.
+     * @return 
+     */
     String getName();
 }
 
 /**
- * Representation of a directory for the use by Database and others
+ * Representation of a directory for the use by Database and others.
  * @author Tomas Filipek
  */
 class DDirectory implements DItem {    
@@ -37,10 +47,14 @@ class DDirectory implements DItem {
     }    
     
     /**
-     * List of all items this directory contains
+     * The directory contents. 
      */
     private Map<String,DItem> itemMap;
 
+    /**
+     * Returns the contents of this directory.
+     * @return 
+     */
     Map<String, DItem> getItemMap() {
         synchronized (lockObject){
             return Collections.unmodifiableMap(itemMap);
@@ -54,7 +68,7 @@ class DDirectory implements DItem {
     
     /**
      * Adds a file/directory into this directory.
-     * @param item 
+     * @param item The item to be added.
      */
     void addItem(DItem item){
         if (item != null){
@@ -128,13 +142,13 @@ class DDirectory implements DItem {
 }
 
 /**
- * Representation of a file for the use by Database
+ * Representation of a regular file for the use by Database.
  * @author Tomas Filipek
  */
 class DFile implements DItem, Comparable<DFile>{   
     
     /**
-     * The name of this file
+     * The name of this file.
      */
     private final String name;   
     
@@ -148,6 +162,10 @@ class DFile implements DItem, Comparable<DFile>{
      */
     private final List<DVersion> versionList;
     
+    /**
+     * Returns the list of all existing versions of this file.
+     * @return 
+     */
     List<DVersion> getVersionList() {        
         synchronized (lockObject){
             return Collections.unmodifiableList(versionList);
@@ -156,7 +174,7 @@ class DFile implements DItem, Comparable<DFile>{
     
     /**
      * Adds the specified version to this file.
-     * @param version 
+     * @param version The version to be added.
      */
     void addVersion(DVersion version){
         if (version != null){
@@ -165,19 +183,7 @@ class DFile implements DItem, Comparable<DFile>{
             }
         }
     }
-    
-    /**
-     * Removes the "index"-th version of this file.
-     * @param index 
-     */
-    void removeVersion(int index){
-        synchronized (lockObject){
-            if ((versionList.size() > index) && (index >= 0)){
-                versionList.remove(index);
-            }
-        }
-    }
-    
+       
     /**
      * Removes the specified version of this file.
      * @param version 

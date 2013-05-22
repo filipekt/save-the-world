@@ -1,6 +1,13 @@
+:: Output file, to which the performance testing results will be saved.
 set output_file=D:\out.txt
+
+:: Directory with the test data described in the thesis.
 set test_dir=D:/TestData
-set test_count=1
+
+:: Number of iterations of the test.
+set test_count=50
+
+
 del %output_file%
 
 for /L %%j in (1,1,%test_count%) do (

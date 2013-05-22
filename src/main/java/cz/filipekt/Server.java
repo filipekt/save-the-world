@@ -32,7 +32,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ResourceBundle;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.concurrent.Executor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -469,7 +468,7 @@ public final class Server {
                                 collect_blocks();
                             }
                             break;
-                        case GET_D_ITEM:
+                        case GET_D_ITEM:  
                             synchronized (lockObject){
                                 fname = Arrays.asList(kryo.readObject(kryo_in, String[].class));
                                 DItem item = db.getItem(fname);
@@ -486,10 +485,10 @@ public final class Server {
                                         kryo.writeObject(kryo_out, file, DFile.getSerializer());
                                     }
                                 }                                
-                                kryo_out.flush();
+                                kryo_out.flush();                            
                             }
                             break;
-                        case GET_FS:
+                        case GET_FS:     
                             synchronized (lockObject){
                                 Map<String,DItem> fileMap = db.getFileMap();
                                 if (fileMap == null){
@@ -507,10 +506,10 @@ public final class Server {
                                         }
                                     }
                                 }
-                                kryo_out.flush();
+                                kryo_out.flush();                            
                             }
                             break;
-                        case GET_SERVER_BLOCKS:
+                        case GET_SERVER_BLOCKS:   
                             synchronized (lockObject){
                                 Map<String,DBlock> blocks = db.getBlockMap();
                                 if (blocks == null){
@@ -522,7 +521,7 @@ public final class Server {
                                         kryo.writeObject(kryo_out, entry.getValue(), DBlock.getSerializer());
                                     }
                                 }
-                                kryo_out.flush();
+                                kryo_out.flush();         
                             }
                             break;
                     }
@@ -761,7 +760,8 @@ public final class Server {
             Files.createFile(f);
         }
         if(Files.size(f)==0){            
-            return new Database(new HashMap<String,DItem>(), new HashMap<String,DBlock>(), new TreeSet<Long>(), new TreeSet<String>());
+            return new Database(new HashMap<String,DItem>(), new HashMap<String,DBlock>(), 
+                    new HashSet<Long>(), new HashSet<String>());
         } else {            
             Kryo kryo = new Kryo(null);
             kryo.setAutoReset(true);

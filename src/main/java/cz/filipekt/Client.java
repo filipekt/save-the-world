@@ -235,7 +235,8 @@ public class Client {
                     break;
                 }
                 if(request.size()==2){
-                    String name = ServerUtils.parseName(request.get(1)).getLast();
+                    List<String> parsedName = ServerUtils.parseName(request.get(1));
+                    String name = parsedName.get(parsedName.size()-1);
                     request.add(name);
                 }
                 try{                            

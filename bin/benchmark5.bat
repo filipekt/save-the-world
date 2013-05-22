@@ -1,8 +1,18 @@
+:: Output file, to which the performance testing results will be saved.
 set output_file=D:\out.txt
+
+:: Directory with the test data described in the thesis.
 set test_dir=D:/TestData
+
+:: Number of iterations of the test.
 set test_count=50
+
 del %output_file%
+
+:: Size of the file to be added.
 set filesize=5
+
+:: Size of the database before adding the file.
 set previous_size_10m=1
 set /a upper=(%previous_size_10m% - 1)
 

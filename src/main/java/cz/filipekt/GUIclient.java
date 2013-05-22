@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -541,7 +542,8 @@ public class GUIclient {
                     path.addFirst(tn);
                 }
                 path.removeFirst();
-                selectedPath = path;
+                selectedPath = new ArrayList<>();
+                selectedPath.addAll(path);
             }              
         }
     }
@@ -685,7 +687,7 @@ public class GUIclient {
     */
     private void serveAdd(){
         if (selectedPath == null){            
-            selectedPath = new LinkedList<>();
+            selectedPath = new ArrayList<>();
         }  
         final JFileChooser fc = new JFileChooser();
         fc.setLocale(locale);
@@ -701,7 +703,7 @@ public class GUIclient {
                 }
             });  
             Path source = fc.getSelectedFile().toPath().toAbsolutePath();
-            LinkedList<String> selectedPathStrings = new LinkedList<>();
+            List<String> selectedPathStrings = new ArrayList<>();
             for (TreeNode tn : selectedPath){
                 selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
             }
@@ -709,10 +711,10 @@ public class GUIclient {
             if (isSelectedPathDir()){
                 selectedPathStrings.add(lastItem);
             } else if (isSelectedPathVersion()){
-                selectedPathStrings.removeLast();
+                selectedPathStrings.remove(selectedPathStrings.size()-1);
             }
             String target = ServerUtils.constructPath(selectedPathStrings);
-            List<String> request = new LinkedList<>();
+            List<String> request = new ArrayList<>();
             request.add("add");
             request.add(source.toString());
             request.add(target);
@@ -790,7 +792,7 @@ public class GUIclient {
                 createAndShowProgessFrame();
             }
         });                        
-        LinkedList<String> selectedPathStrings = new LinkedList<>();
+        List<String> selectedPathStrings = new ArrayList<>();
         for(TreeNode tn : selectedPath){
             selectedPathStrings.add(((DefaultMutableTreeNode)tn).getUserObject().toString());
         }     
@@ -801,7 +803,6 @@ public class GUIclient {
                 res = client.receiveDirectory(selectedPathStrings, destination, zip, true, dir, browserFrame);
             } else if (isSelectedPathVersion()){
                 DVersion version = (DVersion)((DefaultMutableTreeNode)selectedPath.get(selectedPath.size()-1)).getUserObject();
-//                DFile file = db.findFile(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
                 DFile file = (DFile) client.getDItemFromServer(selectedPathStrings.subList(0, selectedPathStrings.size()-1));
                 if (file == null) {
                     throw new FileNotFoundException();

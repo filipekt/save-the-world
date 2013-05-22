@@ -2,7 +2,6 @@ package cz.filipekt.diff;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -250,7 +249,7 @@ class Myers {
         }
         final int n = Ato - Afrom;
         final int m = Bto - Bfrom;
-        List<Snake> res = new LinkedList<>();
+        List<Snake> res = new ArrayList<>();
         if ((m==0) && (n>0)){
             if (addup){
                 size += n;
@@ -276,7 +275,7 @@ class Myers {
             return fromSnakes(res);
         }
         if ((m==0) && (n==0)){
-           return new LinkedList<>();
+           return new ArrayList<>();
         }
         Quadruple<Snake,Integer,Boolean,Boolean> middleSnake = findMiddleSnake(Afrom, Ato, Bfrom, Bto, heuristics);
         if (middleSnake == null){

@@ -12,8 +12,8 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -185,8 +185,8 @@ class ServerUtils {
      * @param fname
      * @return 
      */
-    static LinkedList<String> parseName(String fname){
-        LinkedList<String> res = new LinkedList<>();
+    static List<String> parseName(String fname){
+        List<String> res = new ArrayList<>();
         String[] spl = fname.split("[\\\\/]");
         for(String s : spl){
             if(!s.equals("")){
@@ -366,7 +366,7 @@ class ServerUtils {
         if(args==null){
             return null;
         }
-        List<String> res = new LinkedList<>();
+        List<String> res = new ArrayList<>();
         boolean uvnitr = false;
         StringBuilder sb = new StringBuilder();
         for(int i = 0; i<args.size(); i++){

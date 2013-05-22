@@ -4,9 +4,9 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -225,7 +225,7 @@ class DFile implements DItem, Comparable<DFile>{
     private final String path2;
 
     DFile(List<String> path){
-        this(path, new LinkedList<DVersion>());
+        this(path, new ArrayList<DVersion>());
     }    
     
     private DFile(List<String> path, List<DVersion> versions){
@@ -359,13 +359,13 @@ class DFile implements DItem, Comparable<DFile>{
 
         @Override
         public DFile read(Kryo kryo, Input input, Class<DFile> type) {                      
-            List<DVersion> versions = new LinkedList<>();
+            List<DVersion> versions = new ArrayList<>();
             int length = input.readInt();            
             for (int i = 0; i<length; i++){
                 DVersion item = kryo.readObject(input, DVersion.class, DVersion.getSerializer());
                 versions.add(item);
             }
-            List<String> path = new LinkedList<>();
+            List<String> path = new ArrayList<>();
             int pathLength = input.readInt();
             for (int i = 0; i<pathLength; i++){
                 path.add(input.readString());

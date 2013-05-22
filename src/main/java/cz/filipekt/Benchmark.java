@@ -6,10 +6,10 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import static java.nio.file.StandardOpenOption.*;
+import java.util.ArrayList;
 
 /**
  * For measuring the application performace.
@@ -110,7 +110,7 @@ public class Benchmark {
      */
     private void measureAdd(String fname, String target) throws IOException{        
         Client client = new Client(uri, port, null, locale, System.out, false);        
-        List<String> command = new LinkedList<>();
+        List<String> command = new ArrayList<>();
         command.add("add");
         command.add(fname);
         if ((target != null) && !target.isEmpty()){
@@ -136,7 +136,7 @@ public class Benchmark {
      */
     private void measureGet(String fname, String target, Integer version, boolean zip) throws IOException{       
         Client client = new Client(uri, port, null, locale, System.out, false);        
-        List<String> command = new LinkedList<>();
+        List<String> command = new ArrayList<>();
         if (zip){
             command.add("get_zip");
         } else {
@@ -165,7 +165,7 @@ public class Benchmark {
      */
     private void measureDelete(String path, int version) throws IOException{
         Client client = new Client(uri, port, null, locale, System.out, false);        
-        List<String> command = new LinkedList<>();
+        List<String> command = new ArrayList<>();
         command.add("delete");
         command.add(path);
         command.add(Integer.toString(version));
@@ -194,7 +194,7 @@ public class Benchmark {
      */
     private void gc() throws IOException{
         Client client = new Client(uri, port, null, locale, System.out, false);        
-        List<String> command = new LinkedList<>();
+        List<String> command = new ArrayList<>();
         command.add("gc");                        
         client.switchToOperation(command);                        
         client.terminateConnection();

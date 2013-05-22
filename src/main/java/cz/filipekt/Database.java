@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeSet;
 
 /** 
  *  Represents filesystem of the files which have been uploaded to the server. <br/>
@@ -37,13 +36,13 @@ class Database {
      * Set of all primary hash values used in the present blocks.
      * Used mainly for determining whether a block is not present.
      */
-    private TreeSet<Long> blockHashes;    
+    private Set<Long> blockHashes;    
     
     /**
      * Set of all secondary hash values used in the present blocks.
      * Used mainly for determining whether a block is present.
      */
-    private TreeSet<String> blockHashes2;
+    private Set<String> blockHashes2;
      
     /**
      * Updates the blockHashes and blockHashes2 sets (databases of block hash values).
@@ -51,8 +50,8 @@ class Database {
      */
     private void refreshBlockSet(){
         synchronized (lockObject){
-            blockHashes = new TreeSet<>();
-            blockHashes2 = new TreeSet<>();
+            blockHashes = new HashSet<>();
+            blockHashes2 = new HashSet<>();
             for (DBlock block : blockMap.values()){
                 if (block != null){
                     blockHashes.add(block.getHash());
@@ -82,7 +81,7 @@ class Database {
     /**
      * A linear list view of all the DFiles present in the database
      */
-    private Collection<DFile> regularFiles = new TreeSet<>();       
+    private Collection<DFile> regularFiles = new HashSet();
     
     /**
      * Returns the root directory contents.
@@ -290,7 +289,7 @@ class Database {
     }
 
     private Database(){}
-    Database(Map<String,DItem> fileMap, Map<String,DBlock> blockSet, TreeSet<Long> hashes, TreeSet<String> hashes2){
+    Database(Map<String,DItem> fileMap, Map<String,DBlock> blockSet, Set<Long> hashes, Set<String> hashes2){
         this.fileMap = fileMap;
         this.blockMap = blockSet;
         this.blockHashes  = hashes;
@@ -404,17 +403,17 @@ class Database {
             }
             
             int hashesSize = input.readInt();
-            res.blockHashes = new TreeSet<>();
+            res.blockHashes = new HashSet<>();
             for (int i = 0; i<hashesSize; i++){
                 res.blockHashes.add(input.readLong());
             }           
             int hashes2Size = input.readInt();
-            res.blockHashes2 = new TreeSet<>();
+            res.blockHashes2 = new HashSet<>();
             for (int i = 0; i<hashes2Size; i++){
                 res.blockHashes2.add(input.readString());
             }            
             int fileListSize = input.readInt();
-            res.regularFiles = new TreeSet<>();
+            res.regularFiles = new HashSet<>();
             for (int i = 0; i< fileListSize; i++){                
                 res.regularFiles.add(kryo.readObject(input, DFile.class, DFile.getSerializer()));
             }
